@@ -735,7 +735,7 @@ describe('Batch extract (v0.4.0)', () => {
         { content: 'a', schema: { type: 'object' } },
         { content: 'b', templateSlug: 'logs.stripe.event', tier: 'recommended' },
       ],
-      { options: { use_cache: false } },
+      { options: { cache: false } },
     );
     expect(result.total_credits_used).toBe(3);
     const [url, init] = mockFetch.mock.calls[0]!;
@@ -747,7 +747,7 @@ describe('Batch extract (v0.4.0)', () => {
         { content: 'a', tier: 'required', schema: { type: 'object' } },
         { content: 'b', tier: 'recommended', template_slug: 'logs.stripe.event' },
       ],
-      options: { use_cache: false },
+      options: { cache: false },
     });
   });
 

@@ -223,6 +223,34 @@ def _read_document_argument(arguments: dict[str, Any]) -> bytes:
     return data
 
 
+def _extract_options(options: Any) -> Any:
+    """`options` for structx_extract, structx_extract_from_url and
+    structx_extract_batch, with `use_cache` sent as `cache`.
+
+    The API's name for the cache switch is `cache`. The tool descriptions up
+    to 0.4.0 told agents to send `use_cache`, which the API ignored, so an
+    agent could never skip the cache. Done here as well as in structx-sdk
+    because the batch tool posts directly and this server may be installed
+    next to an SDK release that still forwards `use_cache` unchanged.
+    Different values for the two keys raise StructXError (the API answers
+    422). `use_cache: null` counts as not sent.
+    """
+    if not isinstance(options, dict) or "use_cache" not in options:
+        return options
+    wire = {k: v for k, v in options.items() if k != "use_cache"}
+    use_cache = options["use_cache"]
+    if use_cache is None:
+        return wire
+    cache = wire.get("cache")
+    if cache is not None and cache != use_cache:
+        raise StructXError(
+            "options has both 'cache' and 'use_cache' with different values; "
+            "they are the same option, so send only 'cache'"
+        )
+    wire["cache"] = use_cache
+    return wire
+
+
 async def _dispatch(
     name: str,
     arguments: dict[str, Any],
@@ -236,7 +264,7 @@ async def _dispatch(
             schema=arguments.get("schema"),
             template_slug=arguments.get("template_slug"),
             tier=arguments.get("tier", "required"),
-            options=arguments.get("options"),
+            options=_extract_options(arguments.get("options")),
         )
         return result.model_dump()
 
@@ -272,13 +300,15 @@ async def _dispatch(
     if name == "structx_extract_from_url":
         url = arguments["url"]
         validate_fetch_url(url)
+        # Before the fetch, so a conflicting cache option costs no request.
+        options = _extract_options(arguments.get("options"))
         content = await _fetch_url(url)
         result = await sdk.extract(
             content=content,
             schema=arguments.get("schema"),
             template_slug=arguments.get("template_slug"),
             tier=arguments.get("tier", "required"),
-            options=arguments.get("options"),
+            options=options,
         )
         return result.model_dump()
 
@@ -385,7 +415,7 @@ async def _dispatch(
             items.append({k: v for k, v in item.items() if v is not None})
         batch_body: dict[str, Any] = {"items": items}
         if arguments.get("options") is not None:
-            batch_body["options"] = arguments["options"]
+            batch_body["options"] = _extract_options(arguments["options"])
         return await sdk._request("POST", "/v1/extract/batch", json=batch_body)
 
     if name == "structx_template_cost_estimate":
