@@ -125,6 +125,34 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/**
+ * The `options` object sent to `/v1/extract` and `/v1/extract/batch`.
+ *
+ * The server's name for the cache switch is `cache`. Releases up to 0.5.0
+ * documented `use_cache` instead, which older servers ignore, so
+ * `{ use_cache: false }` never skipped the cache. `use_cache` is still
+ * accepted: it is sent as `cache`. Given both with different values, throw
+ * `StructXError` before the request (the server answers 422). A
+ * `use_cache` of `null` / `undefined` counts as not given. The caller's
+ * object is not changed.
+ */
+function extractOptions(
+  options: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (options === undefined || options === null || !('use_cache' in options)) return options;
+  const { use_cache: useCache, ...wire } = options;
+  if (useCache === undefined || useCache === null) return wire;
+  const cache = wire['cache'];
+  if (cache !== undefined && cache !== null && cache !== useCache) {
+    throw new StructXError(
+      "options has both 'cache' and 'use_cache' with different values; " +
+        "they are the same option, so pass only 'cache'",
+    );
+  }
+  wire['cache'] = useCache;
+  return wire;
+}
+
 /** Options accepted by `extract()`. */
 export interface ExtractOptions {
   /** Inline JSON Schema. EXACTLY ONE of `schema` or `templateSlug` is
@@ -135,8 +163,10 @@ export interface ExtractOptions {
   /** Field-depth dial. `"required"` is the default + cheapest;
    *  `"extended"` returns every field in the schema. */
   tier?: string;
-  /** Forwarded as-is — see backend docs for the full set
-   *  (`include_citations`, `use_cache`, `confidence_threshold`, …). */
+  /** Forwarded to the backend — see backend docs for the full set
+   *  (`include_citations`, `cache`, `confidence_threshold`, …). `cache: false`
+   *  skips the extraction cache. The older name `use_cache` still works: it
+   *  is sent as `cache`; both with different values throws `StructXError`. */
   options?: Record<string, unknown>;
 }
 
@@ -250,7 +280,8 @@ export interface ProjectOptions {
 /** Options accepted by `batchExtract()`. */
 export interface BatchExtractOptions {
   /** Shared extraction options applied to every item in the batch
-   *  (`include_citations`, `use_cache`, `confidence_threshold`, …). */
+   *  (`include_citations`, `cache`, `confidence_threshold`, …), handled as
+   *  on `extract()` (`use_cache` is sent as `cache`). */
   options?: Record<string, unknown>;
 }
 
@@ -325,7 +356,7 @@ export class StructX {
     };
     if (options.schema !== undefined) body['schema'] = options.schema;
     if (options.templateSlug !== undefined) body['template_slug'] = options.templateSlug;
-    if (options.options !== undefined) body['options'] = options.options;
+    if (options.options !== undefined) body['options'] = extractOptions(options.options);
     return (await this._request({
       method: 'POST',
       path: '/v1/extract',
@@ -760,7 +791,7 @@ export class StructX {
         return wire;
       }),
     };
-    if (opts.options !== undefined) body['options'] = opts.options;
+    if (opts.options !== undefined) body['options'] = extractOptions(opts.options);
     return (await this._request({
       method: 'POST',
       path: '/v1/extract/batch',

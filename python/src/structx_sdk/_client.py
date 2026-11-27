@@ -67,6 +67,32 @@ _DOCUMENT_MAX_BYTES = 32 * 1024 * 1024
 _DOCUMENT_TIMEOUT = 180.0  # the server allows 120 s per document, plus upload
 
 
+def _extract_options(options: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The `options` object sent to `/v1/extract` and `/v1/extract/batch`.
+
+    The server's name for the cache switch is `cache`. SDK releases up to
+    0.5.0 documented `use_cache` instead, which older servers ignore, so
+    `{"use_cache": False}` never skipped the cache. `use_cache` is still
+    accepted: it is sent as `cache`. Given both with different values,
+    raise `StructXError` before the request (the server answers 422).
+    `use_cache=None` counts as not given. The caller's dict is not changed.
+    """
+    if options is None or "use_cache" not in options:
+        return options
+    wire = {k: v for k, v in options.items() if k != "use_cache"}
+    use_cache = options["use_cache"]
+    if use_cache is None:
+        return wire
+    cache = wire.get("cache")
+    if cache is not None and cache != use_cache:
+        raise StructXError(
+            "options has both 'cache' and 'use_cache' with different values; "
+            "they are the same option, so pass only 'cache'"
+        )
+    wire["cache"] = use_cache
+    return wire
+
+
 # ── Retry policy ────────────────────────────────────────────
 
 
@@ -481,8 +507,11 @@ class StructX(_BaseClient):
         narrowest extraction; `"extended"` returns every field in the
         schema. See backend docs for the full tier ladder.
 
-        `options` is forwarded as-is to the backend — use it for
-        `include_citations`, `use_cache`, `confidence_threshold`, etc.
+        `options` is forwarded to the backend — use it for
+        `include_citations`, `cache` (`False` skips the extraction cache),
+        `confidence_threshold`, etc. The older name `use_cache` still works:
+        it is sent as `cache`; passing both with different values raises
+        `StructXError`.
         """
         body: dict[str, Any] = {"content": content, "tier": tier}
         if schema is not None:
@@ -490,7 +519,7 @@ class StructX(_BaseClient):
         if template_slug is not None:
             body["template_slug"] = template_slug
         if options is not None:
-            body["options"] = options
+            body["options"] = _extract_options(options)
         return Extraction.model_validate(self._request("POST", "/v1/extract", json=body))
 
     def extract_file(
@@ -721,10 +750,11 @@ class StructX(_BaseClient):
         metered individually server-side; this is a thin wrapper that
         surfaces the batch totals — there is no client-side credit logic.
 
-        `options` is a batch-wide override forwarded as-is (per-item
-        `options` are ignored by the backend). `output_format`
-        (`"json"` / `"ndjson"` / `"csv"`) and `csv_array_mode` control
-        batch-level serialization; omit them to use the account default.
+        `options` is a batch-wide override, as on `extract()` (per-item
+        `options` are ignored by the backend); `use_cache` is sent as
+        `cache`. `output_format` (`"json"` / `"ndjson"` / `"csv"`) and
+        `csv_array_mode` control batch-level serialization; omit them to
+        use the account default.
 
         Like `extract()`, this is a billed write path: it is retried only
         on transport errors, never on a 5xx (the batch may have been
@@ -732,7 +762,7 @@ class StructX(_BaseClient):
         """
         body: dict[str, Any] = {"items": items}
         if options is not None:
-            body["options"] = options
+            body["options"] = _extract_options(options)
         if output_format is not None:
             body["output_format"] = output_format
         if csv_array_mode is not None:
@@ -1014,7 +1044,7 @@ class AsyncStructX(_BaseClient):
         if template_slug is not None:
             body["template_slug"] = template_slug
         if options is not None:
-            body["options"] = options
+            body["options"] = _extract_options(options)
         return Extraction.model_validate(
             await self._request("POST", "/v1/extract", json=body)
         )
@@ -1273,10 +1303,11 @@ class AsyncStructX(_BaseClient):
         and optionally `tier`. Items are metered individually server-side;
         this thin wrapper surfaces the batch totals with no client-side
         credit logic. Like `extract()`, it is a billed write path —
-        retried only on transport errors, never on a 5xx."""
+        retried only on transport errors, never on a 5xx. `options` is
+        handled as on `extract()` (`use_cache` is sent as `cache`)."""
         body: dict[str, Any] = {"items": items}
         if options is not None:
-            body["options"] = options
+            body["options"] = _extract_options(options)
         if output_format is not None:
             body["output_format"] = output_format
         if csv_array_mode is not None:

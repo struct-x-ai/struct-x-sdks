@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `"cache"` option now reaches the API.** The docs told callers to set `Options: map[string]any{"use_cache": false}`, but the API's key is `cache` and it ignores unknown option keys, so the cache was never skipped. `Extract` and `BatchExtract` now send `use_cache` as `cache`, and the doc comments name `cache`. Both with different values returns an error wrapping `ErrStructX` before the request. The caller's map is not changed.
+
 ## [0.2.0] — 2026-11-26
 
 Document extraction release, aligned with the Python / Node SDKs' 0.5.0: `ExtractFile` reads PDFs through `POST /v1/extract/document`. Also fixes the default API base URL.

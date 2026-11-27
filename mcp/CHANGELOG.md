@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`options.cache` now reaches the API.** The `structx_extract` tool description told agents to send `use_cache`, but the API's key is `cache` and it ignores unknown option keys, so the cache was never skipped. The description now names `cache`, and `structx_extract`, `structx_extract_from_url` and `structx_extract_batch` send `use_cache` as `cache` (with any `structx-sdk` >= 0.5.0). Both with different values returns an error to the agent before any request, and before the URL fetch.
+
 ## [0.4.0] — 2026-11-26
 
 Adds PDF extraction for agents. Requires `structx-sdk` 0.5.0, so publish the SDK first.
