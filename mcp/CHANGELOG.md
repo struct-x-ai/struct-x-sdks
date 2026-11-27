@@ -8,6 +8,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - **`options.cache` now reaches the API.** The `structx_extract` tool description told agents to send `use_cache`, but the API's key is `cache` and it ignores unknown option keys, so the cache was never skipped. The description now names `cache`, and `structx_extract`, `structx_extract_from_url` and `structx_extract_batch` send `use_cache` as `cache` (with any `structx-sdk` >= 0.5.0). Both with different values returns an error to the agent before any request, and before the URL fetch.
+- `structx_template_cost_estimate`: the `tier` description no longer reads as if `per_tier` were a tier value (agents sent `tier: "per_tier"` and got an input-validation error). It now says to call once with any tier and read the response's `per_tier` breakdown.
 
 ## [0.4.0] — 2026-11-26
 

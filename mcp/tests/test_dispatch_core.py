@@ -349,3 +349,22 @@ async def test_delete_dataset(sdk, base_url):
     out = await _dispatch("structx_delete_dataset", {"dataset_id": ds_id}, sdk)
     assert out["deleted"] is True
     assert out["id"] == ds_id
+
+
+def test_tool_descriptions_never_name_values_outside_their_enum():
+    """A parameter description must not present a token as a value the enum
+    rejects. Regression: the cost-estimate `tier` description said
+    "`per_tier` covers all tiers", so agents sent tier="per_tier" and got an
+    input-validation error (per_tier is a RESPONSE field, not a tier)."""
+    import re
+
+    from structx_mcp._tools import TEMPLATE_COST_ESTIMATE_TOOL
+
+    tier = TEMPLATE_COST_ESTIMATE_TOOL.inputSchema["properties"]["tier"]
+    assert tier["enum"] == ["required", "recommended", "optional", "extended"]
+    desc = tier["description"]
+    # every backticked token in the description is either an allowed value or
+    # explicitly called a response field
+    for tok in re.findall(r"`([^`]+)`", desc):
+        assert tok in tier["enum"] or "response field" in desc, tok
+    assert "not a tier value" in desc
