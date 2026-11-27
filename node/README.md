@@ -48,21 +48,11 @@ console.log(result.credits_used);      // 2
 
 ## Authentication
 
-The SDK supports two credentials, and different methods need different ones:
+Every method authenticates with your API key (`X-API-Key`), set with `apiKey: 'sx_...'` or `STRUCTX_API_KEY`. That includes `usage()` and the personal-schema methods (`listMySchemas`, `getMySchema`, `saveMySchema`, `updateMySchema`, `deleteMySchema`).
 
-| Credential | How to set | Methods that use it |
-|---|---|---|
-| **API key** (`X-API-Key`) | `apiKey: 'sx_...'` or `STRUCTX_API_KEY` | `extract`, `batchExtract`, `inferSchema`, `listTemplates`, `recommendTemplates`, `synthesize`, canonical projection, catalog/template getters — the whole dual-auth surface. |
-| **Bearer token** (JWT, `Authorization: Bearer`) | `bearerToken: 'ey...'` or `STRUCTX_BEARER_TOKEN` | `usage()` and the personal-schema CRUD (`listMySchemas`, `getMySchema`, `saveMySchema`, `updateMySchema`, `deleteMySchema`). These backend routes accept a dashboard JWT only — an API key is rejected with 401. |
+With an API key, the personal-schema methods write personal schemas only. Binding a schema to an organization or sharing it is done in the dashboard; the API answers a 403 (`PermissionDeniedError`, code `api_key_personal_schemas_only`) to an org write made with an API key.
 
-An API key is always required. Add the bearer token when you also need the JWT-only methods:
-
-```ts
-const client = new StructX({ apiKey: 'sx_...', bearerToken: 'ey...' }); // or STRUCTX_BEARER_TOKEN
-const usage = await client.usage();  // sends Authorization: Bearer
-```
-
-Calling a JWT-only method without a bearer token rejects with a clear `StructXError` up-front (no 401 round-trip). When both credentials are set, the SDK sends both headers and the backend picks the right one per endpoint.
+A JWT bearer token (`bearerToken: 'ey...'` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
 ## Configuration
 
@@ -71,7 +61,7 @@ import { StructX, RetryPolicy } from '@struct-x/sdk';
 
 const client = new StructX({
   apiKey: 'sx_...',                       // or STRUCTX_API_KEY env var
-  bearerToken: 'ey...',                   // optional — or STRUCTX_BEARER_TOKEN; for usage() + schema CRUD
+  bearerToken: 'ey...',                   // optional — or STRUCTX_BEARER_TOKEN; sent as Authorization: Bearer
   baseUrl: 'https://api.struct-x.ai',      // or STRUCTX_BASE_URL env var
   timeoutMs: 30_000,                      // per-request timeout
   retry: new RetryPolicy({                // partial overrides also accepted: retry: { maxAttempts: 5 }
@@ -171,7 +161,7 @@ await client.updateMySchema(saved.slug as string, {
 await client.deleteMySchema(saved.slug as string);
 ```
 
-### The recommend → augment learning loop (v0.2.0)
+### Recommend templates, then refine an inferred schema
 
 ```ts
 // 1. Ask the recommender what existing templates fit your content
@@ -180,12 +170,20 @@ const rec = await client.recommendTemplates({
   k: 5,
 });
 
-// 2. Refine the inferred / picked schema with natural-language guidance.
-//    eventId comes back from recommendTemplates() OR inferSchema().
+// 2. Or draft a schema, then refine it with natural-language guidance.
+//    Pass the event_id from inferSchema() and the SAME content you sent it;
+//    the server checks the content against that call and rejects a
+//    mismatch (ValidationError). Recommend event ids are not accepted.
+const content = '<receipt>...</receipt>';
+const draft = await client.inferSchema(content);
 const refined = await client.augmentSchema(
-  rec.event_id as string,
+  draft.event_id,
   'rename event_id to id and add a customer_country field',
+  content,
+  { contentType: 'html' },     // optional; detected when omitted
 );
+console.log(refined.inferred.json_schema); // same shape as inferSchema()
+// refined.event_id can be refined again with the same content
 ```
 
 ### Community withdrawals (v0.2.0)
@@ -323,7 +321,7 @@ By default the SDK retries up to 3 times with exponential backoff (capped at 30s
 - **Transport errors** — network down, DNS failure, TLS handshake, timeout. Always retried.
 - **5xx responses on read paths** (`/v1/schemas`, `/v1/models`, `/billing/usage`).
 
-The SDK **never** retries 5xx on write paths (`/v1/extract`, `/v1/extract/batch`, `/v1/schemas/infer`) — the server may have partially processed before failing, and re-sending the same content could double-bill.
+The SDK **never** retries 5xx on write paths (`/v1/extract`, `/v1/extract/batch`, `/v1/schemas/infer`, `/v1/schemas/recommendations/{event_id}/augment`) — the server may have partially processed before failing, and re-sending the same content could double-bill.
 
 `Retry-After` headers (on 429 and 503) are honored — the SDK waits exactly that long instead of using its own backoff.
 
@@ -334,7 +332,7 @@ Customize via the `retry` option in the constructor.
 | Variable | Purpose |
 |---|---|
 | `STRUCTX_API_KEY` | Falls back when `apiKey` not passed to constructor |
-| `STRUCTX_BEARER_TOKEN` | Falls back when `bearerToken` not passed — JWT for `usage()` + the `/v1/schemas/mine` CRUD |
+| `STRUCTX_BEARER_TOKEN` | Falls back when `bearerToken` not passed — optional JWT, sent as `Authorization: Bearer` |
 | `STRUCTX_BASE_URL` | Falls back when `baseUrl` not passed |
 
 ## TypeScript

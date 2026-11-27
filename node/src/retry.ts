@@ -62,6 +62,13 @@ export const WRITE_PATHS = new Set<string>([
   '/v1/extract/document',
 ]);
 
+/** `WRITE_PATHS`, plus `POST /v1/schemas/recommendations/{event_id}/augment`,
+ *  which bills like `/v1/schemas/infer` but carries an id in its path. */
+function isWritePath(path: string): boolean {
+  return WRITE_PATHS.has(path)
+    || (path.startsWith('/v1/schemas/recommendations/') && path.endsWith('/augment'));
+}
+
 /** Whether a 5xx response on `path` should be retried under `policy`. */
 export function isRetryableResponse(
   path: string,
@@ -69,7 +76,7 @@ export function isRetryableResponse(
   policy: RetryPolicy,
 ): boolean {
   if (!policy.retryOn5xx) return false;
-  if (WRITE_PATHS.has(path)) return false;
+  if (isWritePath(path)) return false;
   // 501 Not Implemented is a permanent rejection — not transient.
   return status >= 500 && status < 600 && status !== 501;
 }

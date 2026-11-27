@@ -37,15 +37,15 @@ def test_401_authentication_error(client, base_url):
 
 
 @respx.mock
-def test_403_permission_denied(bearer_client, base_url):
-    # usage() is JWT-only and mounts at `/billing/usage` (no `/v1`).
+def test_403_permission_denied(client, base_url):
+    # usage() mounts at `/billing/usage` (no `/v1`).
     respx.get(f"{base_url}/billing/usage").mock(
         return_value=httpx.Response(
             403, json={"error": "Admin only", "code": "admin_required"}
         )
     )
     with pytest.raises(PermissionDeniedError):
-        bearer_client.usage()
+        client.usage()
 
 
 @respx.mock

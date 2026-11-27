@@ -32,6 +32,7 @@ beforeEach(() => {
   // local `npm test` in a dev shell that has them set.
   delete process.env['STRUCTX_API_KEY'];
   delete process.env['STRUCTX_BASE_URL'];
+  delete process.env['STRUCTX_BEARER_TOKEN'];
 });
 
 afterEach(() => {
@@ -154,7 +155,7 @@ describe('extract response id (v0.4.1 fix)', () => {
 });
 
 describe('usage path + auth (v0.4.1 fix)', () => {
-  it('GETs /billing/usage (no /v1) and sends Authorization: Bearer', async () => {
+  it('GETs /billing/usage (no /v1) and sends Authorization: Bearer when set', async () => {
     // Bug 2: billing router mounts at /billing (no /v1 prefix).
     const mockFetch = vi.fn().mockResolvedValue(
       jsonResponse({ credits_used_today: 7, credits_limit_daily: 334, tier: 'developer' }),
@@ -168,11 +169,16 @@ describe('usage path + auth (v0.4.1 fix)', () => {
     expect(headers['Authorization']).toBe('Bearer jwt_t');
   });
 
-  it('usage() without a bearer token throws up-front (no 401 round-trip)', async () => {
-    const mockFetch = vi.fn();
+  it('usage() works with an API key alone', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      jsonResponse({ credits_used_today: 1, credits_limit_daily: 17 }),
+    );
     const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
-    await expect(client.usage()).rejects.toBeInstanceOf(StructXError);
-    expect(mockFetch).not.toHaveBeenCalled();
+    const u = await client.usage();
+    expect(u.credits_used_today).toBe(1);
+    const headers = mockFetch.mock.calls[0]![1]!.headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBe('sx_t');
+    expect(headers['Authorization']).toBeUndefined();
   });
 });
 
@@ -254,10 +260,8 @@ describe('Error mapping by status code', () => {
 describe('Retry behavior', () => {
   it('retries TransportError up to maxAttempts and then raises', async () => {
     const mockFetch = vi.fn().mockRejectedValue(new TypeError('network down'));
-    // usage() is JWT-only — supply a bearer token so we exercise the retry
-    // loop rather than the up-front bearer guard.
     const client = new StructX({
-      apiKey: 'sx_test', bearerToken: 'jwt_test', fetch: mockFetch,
+      apiKey: 'sx_test', fetch: mockFetch,
       retry: { maxAttempts: 3, initialBackoff: 0.001, jitter: 0 },
     });
     await expect(client.usage()).rejects.toBeInstanceOf(TransportError);
@@ -270,7 +274,7 @@ describe('Retry behavior', () => {
       .mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 503))
       .mockResolvedValueOnce(jsonResponse({ credits_used_today: 5, credits_limit_daily: 100 }, 200));
     const client = new StructX({
-      apiKey: 'sx_test', bearerToken: 'jwt_test', fetch: mockFetch,
+      apiKey: 'sx_test', fetch: mockFetch,
       retry: { maxAttempts: 3, initialBackoff: 0.001, jitter: 0 },
     });
     const u = await client.usage();
@@ -294,7 +298,7 @@ describe('Retry behavior', () => {
       .mockResolvedValueOnce(jsonResponse({ error: 'busy' }, 503, { 'Retry-After': '0' }))
       .mockResolvedValueOnce(jsonResponse({ credits_used_today: 1, credits_limit_daily: 100 }, 200));
     const client = new StructX({
-      apiKey: 'sx_test', bearerToken: 'jwt_test', fetch: mockFetch,
+      apiKey: 'sx_test', fetch: mockFetch,
       retry: { maxAttempts: 2 },
     });
     await client.usage();
@@ -374,19 +378,17 @@ describe('Catalog browsing (v0.2.0)', () => {
 });
 
 describe('Personal schemas — CRUD (v0.2.0)', () => {
-  // These routes (/v1/schemas/mine…) are JWT-only, so every client here
-  // carries a bearer token alongside its API key.
   it('listMySchemas accepts both list and { schemas: [...] } shapes', async () => {
     const flat = vi.fn().mockResolvedValue(jsonResponse([{ slug: 'a', name: 'A' }]));
-    const c1 = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: flat });
+    const c1 = new StructX({ apiKey: 'sx_t', fetch: flat });
     expect((await c1.listMySchemas()).length).toBe(1);
 
     const wrapped = vi.fn().mockResolvedValue(jsonResponse({ schemas: [{ slug: 'b' }] }));
-    const c2 = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: wrapped });
+    const c2 = new StructX({ apiKey: 'sx_t', fetch: wrapped });
     expect((await c2.listMySchemas()).length).toBe(1);
   });
 
-  it('listMySchemas sends Authorization: Bearer', async () => {
+  it('listMySchemas sends Authorization: Bearer when a bearer token is set', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ schemas: [] }));
     const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
     await client.listMySchemas();
@@ -395,17 +397,28 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
     expect(headers['X-API-Key']).toBe('sx_t');
   });
 
-  it('a JWT-only method with no bearer token throws up-front', async () => {
-    const mockFetch = vi.fn();
+  it.each([
+    ['listMySchemas', (c: StructX) => c.listMySchemas(), 'GET', '/v1/schemas/mine'],
+    ['getMySchema', (c: StructX) => c.getMySchema('a'), 'GET', '/v1/schemas/mine/a'],
+    ['saveMySchema', (c: StructX) => c.saveMySchema({ name: 'A', jsonSchema: {} }), 'POST', '/v1/schemas/mine'],
+    ['updateMySchema', (c: StructX) => c.updateMySchema('a', { description: 'v2' }), 'PATCH', '/v1/schemas/mine/a'],
+    ['deleteMySchema', (c: StructX) => c.deleteMySchema('a'), 'DELETE', '/v1/schemas/mine/a'],
+  ] as const)('%s works with an API key alone', async (_name, call, method, path) => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ slug: 'a' }));
     const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
-    await expect(client.listMySchemas()).rejects.toBeInstanceOf(StructXError);
-    // Guard fires before any network call.
-    expect(mockFetch).not.toHaveBeenCalled();
+    await call(client);
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(url).toBe(`https://api.struct-x.ai${path}`);
+    expect(init!.method).toBe(method);
+    const headers = init!.headers as Record<string, string>;
+    expect(headers['X-API-Key']).toBe('sx_t');
+    expect(headers['Authorization']).toBeUndefined();
   });
 
   it('getMySchema GETs /v1/schemas/mine/<slug>', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ slug: 'mine-a' }));
-    const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     await client.getMySchema('mine-a');
     const [url, init] = mockFetch.mock.calls[0]!;
     expect(url).toBe('https://api.struct-x.ai/v1/schemas/mine/mine-a');
@@ -414,7 +427,7 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
 
   it('saveMySchema POSTs with camelCase → snake_case mapping; defaults publishable_consent=false', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ slug: 'srv-generated' }));
-    const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     await client.saveMySchema({
       name: 'My Schema',
       jsonSchema: { type: 'object' },
@@ -432,7 +445,7 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
 
   it('saveMySchema includes optional slug / description / category / publishableConsent when set', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({}));
-    const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     await client.saveMySchema({
       name: 'My Schema',
       jsonSchema: { type: 'object' },
@@ -454,7 +467,7 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
 
   it('updateMySchema PATCHes with only the fields that were passed', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({}));
-    const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     await client.updateMySchema('my-schema', {
       description: 'Notes v2',
       jsonSchema: { type: 'object', properties: { x: { type: 'string' } } },
@@ -482,7 +495,7 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
     const mockFetch = vi.fn().mockResolvedValue(
       new Response(null, { status: 204 }),
     );
-    const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     const result = await client.deleteMySchema('my-schema');
     expect(result).toBeUndefined();
     const [url, init] = mockFetch.mock.calls[0]!;
@@ -513,18 +526,52 @@ describe('Recommend → augment loop (v0.2.0)', () => {
     expect(body).toEqual({ k: 10, draft_schema: schema });
   });
 
-  it('augmentSchema POSTs to the feedback endpoint with decision=augment', async () => {
-    const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ inferred: {} }));
+  const inferResponse = {
+    event_id: 'evt_43',
+    inferred: { json_schema: { type: 'object' }, fields: [], overall_confidence: 0.9, needs_review: false },
+    recommendations: [],
+    credits_used: 4,
+    partial: false,
+    cached: false,
+  };
+
+  it('augmentSchema POSTs guidance + content + content_type to /augment', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse(inferResponse));
     const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
-    await client.augmentSchema('evt_42', 'rename event_id to id');
-    const [url, init] = mockFetch.mock.calls[0]!;
-    expect(url).toBe('https://api.struct-x.ai/v1/schemas/recommendations/evt_42/feedback');
-    expect(init!.method).toBe('POST');
-    const body = JSON.parse(init!.body as string);
-    expect(body).toEqual({
-      decision: 'augment',
-      augment_guidance: 'rename event_id to id',
+    const result = await client.augmentSchema('evt_42', 'rename event_id to id', '<p>sample</p>', {
+      contentType: 'html',
     });
+    expect(result.event_id).toBe('evt_43');
+    expect(result.inferred.json_schema).toEqual({ type: 'object' });
+    const [url, init] = mockFetch.mock.calls[0]!;
+    expect(url).toBe('https://api.struct-x.ai/v1/schemas/recommendations/evt_42/augment');
+    expect(init!.method).toBe('POST');
+    expect(JSON.parse(init!.body as string)).toEqual({
+      guidance: 'rename event_id to id',
+      content: '<p>sample</p>',
+      content_type: 'html',
+    });
+  });
+
+  it('augmentSchema omits content_type when not given', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse(inferResponse));
+    const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
+    await client.augmentSchema('evt_42', 'drop trace_id', 'sample text');
+    expect(JSON.parse(mockFetch.mock.calls[0]![1]!.body as string)).toEqual({
+      guidance: 'drop trace_id',
+      content: 'sample text',
+    });
+  });
+
+  it('augmentSchema does not retry a 5xx (billed like inferSchema)', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ error: 'down' }, 503));
+    const client = new StructX({
+      apiKey: 'sx_t', fetch: mockFetch,
+      retry: { maxAttempts: 3, initialBackoff: 0.001, jitter: 0 },
+    });
+    await expect(client.augmentSchema('evt_42', 'drop trace_id', 'sample text'))
+      .rejects.toBeInstanceOf(ServerError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
 

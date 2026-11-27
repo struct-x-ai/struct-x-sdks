@@ -64,12 +64,11 @@ function userAgent(): string {
 export interface StructXOptions {
   /** sx_-prefixed API key. Falls back to env var `STRUCTX_API_KEY`. */
   apiKey?: string;
-  /** Optional JWT bearer token — the second credential path. Falls back
-   *  to env var `STRUCTX_BEARER_TOKEN`. Required by the JWT-only methods
-   *  (`usage()` + the `/v1/schemas/mine` personal-schema CRUD), whose
-   *  backend routes authenticate via `Authorization: Bearer` only (an API
-   *  key is rejected with 401). The API-key methods keep using
-   *  `X-API-Key`. */
+  /** Optional JWT bearer token, sent as `Authorization: Bearer` when set.
+   *  Falls back to env var `STRUCTX_BEARER_TOKEN`. No method requires it:
+   *  `usage()` and the `/v1/schemas/mine` personal-schema methods accept
+   *  the API key too, and the server uses `X-API-Key` when a request
+   *  carries both headers. */
   bearerToken?: string;
   /** Override the base URL. Falls back to env var `STRUCTX_BASE_URL`
    *  and finally to `https://api.struct-x.ai`. */
@@ -201,6 +200,13 @@ export interface InferSchemaOptions {
   returnRecommendations?: boolean;
 }
 
+/** Options accepted by `augmentSchema()`. */
+export interface AugmentSchemaOptions {
+  /** `"html"`, `"markdown"`, `"text"` or `"json"`. Detected from the
+   *  content when omitted. */
+  contentType?: string;
+}
+
 /** Options accepted by `saveMySchema()`. Wire field is `json_schema`; we
  *  use camelCase in the SDK and map to snake_case at the boundary so the
  *  JS surface stays idiomatic. */
@@ -315,7 +321,7 @@ export class StructX {
       );
     }
     this.apiKey = apiKey;
-    // Optional bearer (JWT) credential for the bearer-only methods.
+    // Optional bearer (JWT) credential, sent alongside the API key when set.
     this.bearerToken = options.bearerToken ?? process.env['STRUCTX_BEARER_TOKEN'] ?? undefined;
     const baseUrl = options.baseUrl
       ?? process.env['STRUCTX_BASE_URL']
@@ -455,14 +461,10 @@ export class StructX {
   }
 
   /**
-   * Current credit usage for the authenticated user.
-   *
-   * Bearer-token method: the backend mounts this at `/billing/usage` (no
-   * `/v1` prefix) and authenticates it via JWT Bearer only. Set
-   * `bearerToken` on the client (or `STRUCTX_BEARER_TOKEN`).
+   * Current credit usage for the account that owns the API key
+   * (`GET /billing/usage`, no `/v1` prefix).
    */
   async usage(): Promise<Usage> {
-    this._requireBearer('usage');
     return (await this._request({
       method: 'GET',
       path: '/billing/usage',
@@ -497,10 +499,8 @@ export class StructX {
 
   // ── Personal schemas (v0.2.0) ────────────────────────────────
 
-  /** List schemas the calling user has saved to their account.
-   *  Bearer-token method (`/v1/schemas/mine` is JWT-only). */
+  /** List schemas the calling user has saved to their account. */
   async listMySchemas(): Promise<Record<string, unknown>[]> {
-    this._requireBearer('listMySchemas');
     const raw = await this._request({ method: 'GET', path: '/v1/schemas/mine' });
     if (Array.isArray(raw)) return raw as Record<string, unknown>[];
     const obj = raw as Record<string, unknown>;
@@ -508,10 +508,8 @@ export class StructX {
     return Array.isArray(items) ? (items as Record<string, unknown>[]) : [];
   }
 
-  /** Fetch one of the caller's saved schemas by slug.
-   *  Bearer-token method (`/v1/schemas/mine` is JWT-only). */
+  /** Fetch one of the caller's saved schemas by slug. */
   async getMySchema(slug: string): Promise<Record<string, unknown>> {
-    this._requireBearer('getMySchema');
     return (await this._request({
       method: 'GET',
       path: `/v1/schemas/mine/${encodeURIComponent(slug)}`,
@@ -519,11 +517,12 @@ export class StructX {
   }
 
   /**
-   * Persist a new JSON Schema to the caller's account. Returns the
-   * saved row including its server-generated slug if `slug` was omitted.
+   * Persist a new JSON Schema to the caller's account as a personal
+   * schema. Returns the saved row including its server-generated slug if
+   * `slug` was omitted. Binding a schema to an organization or sharing it
+   * is done in the dashboard.
    */
   async saveMySchema(opts: SaveMySchemaOptions): Promise<Record<string, unknown>> {
-    this._requireBearer('saveMySchema');
     const body: Record<string, unknown> = {
       name: opts.name,
       json_schema: opts.jsonSchema,
@@ -542,13 +541,14 @@ export class StructX {
   /**
    * Patch one of the caller's schemas. Pass only the fields you want
    * to change. `slug` identifies the row in the URL; renaming the slug
-   * requires delete + save.
+   * requires delete + save. With an API key only personal schemas can be
+   * changed; binding a schema to an organization or sharing it is done in
+   * the dashboard.
    */
   async updateMySchema(
     slug: string,
     fields: UpdateMySchemaFields,
   ): Promise<Record<string, unknown>> {
-    this._requireBearer('updateMySchema');
     const body: Record<string, unknown> = {};
     if (fields.name !== undefined) body['name'] = fields.name;
     if (fields.description !== undefined) body['description'] = fields.description;
@@ -567,10 +567,10 @@ export class StructX {
   /**
    * Permanently delete one of the caller's saved schemas. Community
    * copies (if `publishableConsent` was true and an admin published)
-   * stay — use `requestWithdrawal()` to remove those too.
+   * stay — use `requestWithdrawal()` to remove those too. With an API key
+   * only personal schemas can be deleted.
    */
   async deleteMySchema(slug: string): Promise<void> {
-    this._requireBearer('deleteMySchema');
     await this._request({
       method: 'DELETE',
       path: `/v1/schemas/mine/${encodeURIComponent(slug)}`,
@@ -581,9 +581,7 @@ export class StructX {
 
   /**
    * Find existing templates that match content and/or a draft schema.
-   * At least one of `content` / `draftSchema` must be provided. Returns
-   * an `event_id` you can use with `augmentSchema()` to iterate on the
-   * result with natural-language guidance.
+   * At least one of `content` / `draftSchema` must be provided.
    */
   async recommendTemplates(
     opts: RecommendTemplatesOptions = {},
@@ -599,21 +597,33 @@ export class StructX {
   }
 
   /**
-   * Refine a schema (from a prior infer or recommend call) using
-   * natural-language guidance. Example guidance: `"rename event_id to
-   * id and add a customer_country field"`. Requires `eventId` from a
-   * prior infer/recommend response.
+   * Refine an inferred schema with natural-language guidance
+   * (`POST /v1/schemas/recommendations/{eventId}/augment`).
+   *
+   * `eventId` comes from `inferSchema()`, or from an earlier
+   * `augmentSchema()` to keep refining. `guidance` is 3-2000 characters,
+   * e.g. `"rename event_id to id and add a customer_country field"`.
+   * `content` must be the same content sent to that `inferSchema()` call;
+   * the server compares hashes and rejects a mismatch with
+   * `ValidationError` (400).
+   *
+   * Resolves to the refined schema in the `inferSchema()` shape (no
+   * recommendations) with a new `event_id`. Billed like `inferSchema()`,
+   * so a 5xx is not retried.
    */
   async augmentSchema(
     eventId: string,
     guidance: string,
-  ): Promise<Record<string, unknown>> {
-    const body = { decision: 'augment', augment_guidance: guidance };
+    content: string,
+    options: AugmentSchemaOptions = {},
+  ): Promise<InferenceResult> {
+    const body: Record<string, unknown> = { guidance, content };
+    if (options.contentType !== undefined) body['content_type'] = options.contentType;
     return (await this._request({
       method: 'POST',
-      path: `/v1/schemas/recommendations/${encodeURIComponent(eventId)}/feedback`,
+      path: `/v1/schemas/recommendations/${encodeURIComponent(eventId)}/augment`,
       body,
-    })) as Record<string, unknown>;
+    })) as InferenceResult;
   }
 
   // ── Community (v0.2.0) ───────────────────────────────────────
@@ -903,28 +913,10 @@ export class StructX {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
     };
-    // Bearer (JWT) credential — used by the JWT-only methods. When both
-    // credentials are configured we send both headers and let the backend
-    // pick the right one per endpoint.
+    // Optional bearer (JWT) credential, sent alongside the API key when set.
+    // A route that accepts both uses X-API-Key.
     if (this.bearerToken) headers['Authorization'] = `Bearer ${this.bearerToken}`;
     return { ...headers, ...this.defaultHeaders, ...(extra ?? {}) };
-  }
-
-  /**
-   * Guard for the JWT-only methods. Throws a clear SDK-side error (instead
-   * of letting the request 401) when no bearer token is configured. These
-   * methods (`usage`, and the `/v1/schemas/mine` personal-schema CRUD) hit
-   * backend routes guarded by `get_current_user_from_token`, which accepts
-   * an `Authorization: Bearer` JWT only — an API key alone gets 401.
-   */
-  private _requireBearer(method: string): void {
-    if (!this.bearerToken) {
-      throw new StructXError(
-        `${method}() requires a bearer token (JWT). This endpoint authenticates ` +
-          `via Authorization: Bearer only — an API key alone is rejected with 401. ` +
-          `Pass bearerToken to the StructX constructor or set STRUCTX_BEARER_TOKEN.`,
-      );
-    }
   }
 
   /**

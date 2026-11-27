@@ -209,10 +209,10 @@ LIST_TEMPLATES_TOOL = Tool(
 USAGE_TOOL = Tool(
     name="structx_usage",
     description=(
-        "Return the current credit usage for the API key in use — credits used "
-        "today, daily limit, current tier. Useful as a pre-flight check before a "
-        "batch operation, OR after a `RateLimitError` to confirm the cap is "
-        "actually exhausted vs. a transient throttle."
+        "Return the current credit usage for the account that owns the API "
+        "key — credits used today, daily limit, current tier. Useful as a "
+        "pre-flight check before a batch operation, OR after a `RateLimitError` "
+        "to confirm the cap is actually exhausted vs. a transient throttle."
     ),
     inputSchema={"type": "object", "properties": {}},
 )
@@ -301,7 +301,9 @@ SAVE_MY_SCHEMA_TOOL = Tool(
         "row including its server-generated slug. Use this after inferring a "
         "schema (structx_infer_schema) the agent wants to reuse. Pass "
         "publishable_consent=true to opt into community-catalog promotion "
-        "(admin review gates publication)."
+        "(admin review gates publication). With an API key this saves a "
+        "personal schema only; binding a schema to an organization or sharing "
+        "it is done in the struct-x dashboard."
     ),
     inputSchema={
         "type": "object",
@@ -348,7 +350,9 @@ UPDATE_MY_SCHEMA_TOOL = Tool(
     description=(
         "Patch one of the caller's saved schemas. Pass only the fields you want "
         "to change. Common use: toggling publishable_consent to opt in or out of "
-        "community publication."
+        "community publication. With an API key only personal schemas can be "
+        "changed; binding a schema to an organization or sharing it is done in "
+        "the struct-x dashboard."
     ),
     inputSchema={
         "type": "object",
@@ -368,9 +372,10 @@ UPDATE_MY_SCHEMA_TOOL = Tool(
 DELETE_MY_SCHEMA_TOOL = Tool(
     name="structx_delete_my_schema",
     description=(
-        "Permanently delete one of the caller's saved schemas. Community copies "
-        "(if previously published) stay in the catalog — to remove those too, "
-        "call structx_request_withdrawal after this."
+        "Permanently delete one of the caller's saved schemas. With an API key "
+        "only personal schemas can be deleted; schemas bound to or shared with "
+        "an organization are managed in the struct-x dashboard. A copy already "
+        "published to the community catalog is not deleted."
     ),
     inputSchema={
         "type": "object",
@@ -388,8 +393,7 @@ RECOMMEND_TEMPLATES_TOOL = Tool(
         "Find existing templates (platform + community + the caller's own "
         "saved schemas) that match a piece of content or a draft schema. Use "
         "BEFORE inferring a new schema — there's often something close enough "
-        "to fork. Returns an event_id you can pass to structx_augment_schema "
-        "if the top hit needs refinement."
+        "to fork. Returns the ranked matches and an event_id."
     ),
     inputSchema={
         "type": "object",
@@ -419,10 +423,14 @@ RECOMMEND_TEMPLATES_TOOL = Tool(
 AUGMENT_SCHEMA_TOOL = Tool(
     name="structx_augment_schema",
     description=(
-        "Refine a draft schema using natural-language guidance. Requires an "
-        "event_id from a prior structx_infer_schema or "
-        "structx_recommend_templates call. Example guidance: 'rename event_id "
-        "to id and add a customer_country field'. Returns the refined schema."
+        "Refine a schema drafted by structx_infer_schema using natural-language "
+        "guidance, e.g. 'rename event_id to id and add a customer_country "
+        "field'. Takes the event_id that inference returned plus the same "
+        "sample content it was given; the server rejects different content. "
+        "Returns the refined schema in the same shape as structx_infer_schema, "
+        "with a new event_id that can be refined again. event_ids from "
+        "structx_recommend_templates are not accepted. Costs credits like "
+        "structx_infer_schema."
     ),
     inputSchema={
         "type": "object",
@@ -430,15 +438,30 @@ AUGMENT_SCHEMA_TOOL = Tool(
             "event_id": {
                 "type": "string",
                 "description": (
-                    "event_id returned by a prior infer / recommend call."
+                    "event_id returned by structx_infer_schema, or by an "
+                    "earlier structx_augment_schema call."
                 ),
             },
             "guidance": {
                 "type": "string",
-                "description": "Natural-language refinement instructions.",
+                "description": "Natural-language refinement instructions, 3-2000 characters.",
+            },
+            "content": {
+                "type": "string",
+                "description": (
+                    "The same sample content that was sent to "
+                    "structx_infer_schema for this event_id. The server "
+                    "checks it against that call and rejects different "
+                    "content. 200,000 characters max."
+                ),
+            },
+            "content_type": {
+                "type": "string",
+                "enum": ["html", "json", "markdown", "text"],
+                "description": "Optional format hint. Detected from the content when omitted.",
             },
         },
-        "required": ["event_id", "guidance"],
+        "required": ["event_id", "guidance", "content"],
     },
 )
 

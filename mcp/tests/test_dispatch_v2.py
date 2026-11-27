@@ -25,10 +25,18 @@ matters) the body sent to the backend.
 """
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 import respx
 
+from structx_mcp._tools import (
+    AUGMENT_SCHEMA_TOOL,
+    DELETE_MY_SCHEMA_TOOL,
+    SAVE_MY_SCHEMA_TOOL,
+    UPDATE_MY_SCHEMA_TOOL,
+)
 from structx_mcp.server import _dispatch
 
 
@@ -252,29 +260,111 @@ async def test_recommend_templates_with_draft_schema(sdk, base_url):
     assert '"k":10' in body or '"k": 10' in body
 
 
+_AUGMENT_RESPONSE = {
+    "event_id": "rec_evt_43",
+    "inferred": {
+        "json_schema": {"type": "object", "properties": {"id": {"type": "string"}}},
+        "fields": [],
+        "overall_confidence": 0.9,
+        "needs_review": False,
+    },
+    "recommendations": [],
+    "credits_used": 4,
+    "partial": False,
+    "cached": False,
+}
+
+
 @respx.mock
 async def test_augment_schema(sdk, base_url):
+    """Posts guidance + content + content_type to /augment and returns the
+    infer-shaped result as a plain dict."""
     event_id = "rec_evt_42"
     route = respx.post(
-        f"{base_url}/v1/schemas/recommendations/{event_id}/feedback"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            json={
-                "augmented_schema": {"type": "object", "properties": {"id": {"type": "string"}}},
-                "credits_used": 1,
-            },
-        )
-    )
+        f"{base_url}/v1/schemas/recommendations/{event_id}/augment"
+    ).mock(return_value=httpx.Response(200, json=_AUGMENT_RESPONSE))
     out = await _dispatch(
         "structx_augment_schema",
-        {"event_id": event_id, "guidance": "rename event_id to id"},
+        {
+            "event_id": event_id,
+            "guidance": "rename event_id to id",
+            "content": "<p>sample</p>",
+            "content_type": "html",
+        },
         sdk,
     )
-    body = route.calls.last.request.read().decode()
-    assert '"decision":"augment"' in body or '"decision": "augment"' in body
-    assert "rename event_id to id" in body
-    assert out["augmented_schema"]["properties"]["id"]["type"] == "string"
+    assert json.loads(route.calls.last.request.read()) == {
+        "guidance": "rename event_id to id",
+        "content": "<p>sample</p>",
+        "content_type": "html",
+    }
+    assert out["event_id"] == "rec_evt_43"
+    assert out["inferred"]["json_schema"]["properties"]["id"]["type"] == "string"
+    json.dumps(out)  # the MCP layer serializes the payload as JSON
+
+
+@respx.mock
+async def test_augment_schema_omits_content_type_when_not_given(sdk, base_url):
+    event_id = "rec_evt_42"
+    route = respx.post(
+        f"{base_url}/v1/schemas/recommendations/{event_id}/augment"
+    ).mock(return_value=httpx.Response(200, json=_AUGMENT_RESPONSE))
+    await _dispatch(
+        "structx_augment_schema",
+        {"event_id": event_id, "guidance": "drop trace_id", "content": "sample text"},
+        sdk,
+    )
+    assert json.loads(route.calls.last.request.read()) == {
+        "guidance": "drop trace_id",
+        "content": "sample text",
+    }
+
+
+def test_augment_tool_requires_content():
+    props = AUGMENT_SCHEMA_TOOL.inputSchema["properties"]
+    assert AUGMENT_SCHEMA_TOOL.inputSchema["required"] == ["event_id", "guidance", "content"]
+    assert "same sample content" in props["content"]["description"]
+    assert props["content_type"]["enum"] == ["html", "json", "markdown", "text"]
+    assert "content_type" not in AUGMENT_SCHEMA_TOOL.inputSchema["required"]
+
+
+# ── usage + personal schemas with an API key only ───────────
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "tool,arguments,method,path,status,body",
+    [
+        ("structx_usage", {}, "GET", "/billing/usage", 200,
+         {"credits_used_today": 1, "credits_limit_daily": 17}),
+        ("structx_list_my_schemas", {}, "GET", "/v1/schemas/mine", 200, []),
+        ("structx_get_my_schema", {"slug": "a"}, "GET", "/v1/schemas/mine/a", 200, {"slug": "a"}),
+        ("structx_save_my_schema", {"name": "A", "json_schema": {"type": "object"}},
+         "POST", "/v1/schemas/mine", 201, {"slug": "a"}),
+        ("structx_update_my_schema", {"slug": "a", "description": "v2"},
+         "PATCH", "/v1/schemas/mine/a", 200, {"slug": "a"}),
+        ("structx_delete_my_schema", {"slug": "a"}, "DELETE", "/v1/schemas/mine/a", 204, None),
+    ],
+)
+async def test_tool_works_with_api_key_only(sdk, api_key, base_url, tool, arguments, method, path, status, body):
+    response = httpx.Response(status) if body is None else httpx.Response(status, json=body)
+    route = respx.route(method=method, url=f"{base_url}{path}").mock(return_value=response)
+    await _dispatch(tool, arguments, sdk)
+    assert route.call_count == 1
+    request = route.calls.last.request
+    assert request.headers["x-api-key"] == api_key
+    assert "authorization" not in request.headers
+
+
+@pytest.mark.parametrize(
+    "tool", [SAVE_MY_SCHEMA_TOOL, UPDATE_MY_SCHEMA_TOOL, DELETE_MY_SCHEMA_TOOL],
+    ids=lambda t: t.name,
+)
+def test_schema_write_tools_say_api_key_is_personal_only(tool):
+    desc = tool.description
+    assert "With an API key" in desc and "personal" in desc
+    assert "organization" in desc and "dashboard" in desc
+    assert "JWT" not in desc and "bearer" not in desc.lower()
 
 
 # ── Community ────────────────────────────────────────────────
