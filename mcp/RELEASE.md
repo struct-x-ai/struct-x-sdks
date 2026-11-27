@@ -27,6 +27,12 @@ curl -s https://pypi.org/pypi/structx-sdk/0.5.0/json | jq '.info.version'   # co
 git tag structx-mcp-v0.4.0 -m "structx-mcp 0.4.0 — 26 tools, adds structx_extract_document"
 git push origin structx-mcp-v0.4.0
 curl -s https://pypi.org/pypi/structx-mcp/0.4.0/json | jq '.info.version'   # confirm live
+
+# 4. Only after PyPI shows the new version live, point the Claude plugin at it:
+#    in claude-plugin/.claude-plugin/plugin.json, change "structx-mcp==<old>" in
+#    mcpServers.structx.args to the new version and raise the plugin "version"
+#    (users stay on the old copy until "version" changes). Then validate and merge:
+claude plugin validate --strict ./claude-plugin
 ```
 
 Local build-verify (optional, before tagging — CI still owns the upload):
@@ -158,7 +164,24 @@ curl "https://registry.modelcontextprotocol.io/v0.1/servers?search=io.github.str
 3. **Official registry** (`mcp-publisher publish` with `server.json`) — this is what feeds **PulseMCP** and other aggregators automatically.
 4. **mcp.so** — paste the field block into https://mcp.so/submit.
 
-After Smithery / the official registry list you, the Anthropic MCP team may pick the server up for Claude Desktop's "Featured" tab — that's editorial, not an application process.
+Anthropic's Claude directory takes submissions through a developer portal, but it doesn't list this server yet; see "Claude plugin (Claude Code)" below.
+
+## Claude plugin (Claude Code)
+
+`claude-plugin/` packages this server as a Claude plugin: it starts `uvx structx-mcp==<pinned version>` on the user's machine, asks for the Struct-X API key when the plugin is enabled, and adds a `structured-extraction` skill. `.claude-plugin/marketplace.json` at the repo root makes this repository the plugin's marketplace.
+
+**What works today.** The plugin on `main` works for Claude Code users through our own marketplace:
+
+```bash
+claude plugin marketplace add struct-x-ai/struct-x-sdks
+claude plugin install struct-x@struct-x
+```
+
+**Not listed in Anthropic's directory.** On 2026-11-27 the directory's developer portal (claude.ai/directory/manage) refused the plugin. The directory accepts plugins whose MCP server runs on the user's computer only from Verified organizations, and Struct-X isn't one. There is no application for Verified status: Anthropic promotes listed connectors to it on its own. Until then, a plugin from us may only reference an MCP server at a public `https://` URL, and listing that server as a connector (which also reaches claude.ai chat, the desktop and mobile apps, and Cowork) requires OAuth 2.0 sign-in rather than an API key.
+
+**Keep the server entry local until a hosted server exists.** Leave `mcpServers.structx` in `plugin.json` as the local `uvx` command. Pointing it at a hosted URL before `api.struct-x.ai` serves MCP would break every existing install. Switch it only once the hosted endpoint is live, then run **Validate** in the portal again.
+
+**Keep the pin current.** Each `structx-mcp` release needs the plugin bump in step 4 of "Publish to PyPI (CI)" above, or plugin users keep running the old server.
 
 ## Rollback
 
