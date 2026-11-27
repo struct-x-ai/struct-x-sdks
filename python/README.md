@@ -131,6 +131,28 @@ print(projection.projections["ocsf"].coverage)
 sample = client.get_template_canonical("logs.stripe.event", framework="ocsf")
 ```
 
+## Browse the template catalog
+
+`browse_templates()` returns one page of the catalog (`GET /v1/templates`),
+25 templates by default, filtered by tag tokens (`q`), `category`, `vendor`,
+a curated `tag` facet or `first_party`. Items carry no JSON Schema; fetch one
+with `get_template(slug)`.
+
+```python
+page = client.browse_templates(q="stripe", category="PAYMENTS", limit=25)
+print(page.total)
+for t in page.items:
+    print(t.slug, t.field_counts["required"])
+
+while page.next_offset is not None:              # None on the last page
+    page = client.browse_templates(q="stripe", offset=page.next_offset)
+
+schema = client.get_template("logs.stripe.event")["json_schema"]
+```
+
+`list_templates()` still returns the whole gallery (`GET /v1/schemas`) with
+every schema in one response of several MB; prefer `browse_templates()`.
+
 ## Templates: cost estimate & version history
 
 ```python
@@ -178,6 +200,8 @@ asyncio.run(main())
 Every method authenticates with your API key (`X-API-Key`), set with `api_key="sx_..."` or `STRUCTX_API_KEY`. That includes `usage()` and the personal-schema methods (`list_my_schemas`, `get_my_schema`, `save_my_schema`, `update_my_schema`, `delete_my_schema`).
 
 With an API key, the personal-schema methods write personal schemas only: sending `org_slug` or `visibility="org_shared"` to `update_my_schema()` raises `PermissionDeniedError` (403, code `api_key_personal_schemas_only`). Binding a schema to an organization or sharing it is done in the dashboard.
+
+Opting a schema into community-catalog promotion (`publishable_consent`) is also done in the dashboard. The SDK sends `publishable_consent` only when you pass it; with an API key, `save_my_schema(publishable_consent=True)`, or an `update_my_schema()` that changes it, raises `PermissionDeniedError` (403, code `publishable_consent_portal_only`).
 
 A JWT bearer token (`bearer_token="ey..."` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
@@ -238,7 +262,7 @@ StructXError
 
 ## Retries
 
-By default, **read** calls (`list_templates`, `list_models`, `usage`, the canonical / template / synth-dataset getters) auto-retry on transient 5xx and connection errors with exponential backoff.
+By default, **read** calls (`browse_templates`, `list_templates`, `list_models`, `usage`, the canonical / template / synth-dataset getters) auto-retry on transient 5xx and connection errors with exponential backoff.
 
 **Write** calls (`extract`, `batch_extract`, `infer_schema`, `augment_schema`) retry ONLY on transport errors, never on 5xx — because a 5xx after a partial backend run may have already billed the call.
 

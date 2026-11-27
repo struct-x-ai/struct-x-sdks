@@ -88,21 +88,27 @@ async def test_structx_infer_schema(sdk, base_url):
 
 @respx.mock
 async def test_structx_list_templates(sdk, base_url):
-    respx.get(f"{base_url}/v1/schemas").mock(
+    """One page from GET /v1/templates, never the whole /v1/schemas catalog."""
+    whole = respx.get(f"{base_url}/v1/schemas").mock(return_value=httpx.Response(200, json=[]))
+    respx.get(f"{base_url}/v1/templates").mock(
         return_value=httpx.Response(
             200,
-            json=[
-                {"slug": "logs.stripe.event", "name": "Stripe Event", "schema": {"type": "object"}},
-            ],
+            json={
+                "items": [{"slug": "logs.stripe.event", "name": "Stripe Event"}],
+                "total": 1,
+                "limit": 25,
+                "offset": 0,
+            },
         )
     )
     out = await _dispatch("structx_list_templates", {}, sdk)
-    assert "templates" in out
+    assert whole.call_count == 0
     assert len(out["templates"]) == 1
-    # by_alias=True ensures the response uses "schema" (the wire format),
-    # not "schema_def" (the Python attribute name).
-    assert "schema" in out["templates"][0]
-    assert "schema_def" not in out["templates"][0]
+    assert out["templates"][0]["slug"] == "logs.stripe.event"
+    # List items carry no schema; structx_get_template returns one.
+    assert "schema" not in out["templates"][0]
+    assert out["total"] == 1
+    assert out["next_offset"] is None
 
 
 @respx.mock
@@ -110,7 +116,7 @@ async def test_structx_usage(sdk, base_url):
     respx.get(f"{base_url}/billing/usage").mock(
         return_value=httpx.Response(
             200,
-            json={"credits_used_today": 42, "credits_limit_daily": 2000, "tier": "pro"},
+            json={"credits_used_today": 42, "credits_limit_today": 2000, "tier": "pro"},
         )
     )
     out = await _dispatch("structx_usage", {}, sdk)

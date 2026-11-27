@@ -125,7 +125,9 @@ class InferenceResult(_Base):
 
 
 class Template(_Base):
-    """A row from the public template gallery (`/v1/schemas`).
+    """A row from the public template gallery (`/v1/schemas`), returned by
+    `list_templates()`, which downloads the whole catalog at once. For a page
+    of the catalog use `browse_templates()` (`TemplatePage`).
 
     Note: the JSON Schema field is named `schema_def` on the Python
     object (with alias `"schema"` for the wire format). Pydantic v2
@@ -142,6 +144,50 @@ class Template(_Base):
     usage_count: int | None = None
     acceptance_rate: float | None = None
     avg_confidence: float | None = None
+
+
+class TemplateSummary(_Base):
+    """One catalog row from `GET /v1/templates` (`browse_templates()`).
+
+    Carries no JSON Schema; `get_template(slug)` returns one template's full
+    schema. `field_counts` holds the number of fields per tier (`required`,
+    `recommended`, `optional`, `extended`, `total`)."""
+
+    slug: str
+    name: str
+    id: str | None = None
+    family_slug: str | None = None
+    version: str | None = None
+    description: str | None = None
+    category: str | None = None
+    vendor: str | None = None
+    vendor_display_name: str | None = None
+    log_type: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    is_first_party: bool | None = None
+    default_tier: str | None = None
+    field_counts: dict[str, int] = Field(default_factory=dict)
+    usage_count: int = 0
+    published_at: datetime | None = None
+
+
+class TemplatePage(_Base):
+    """One page of the template catalog (`GET /v1/templates`).
+
+    `total` counts every template that matches the filters. Pass
+    `next_offset` as `offset` to get the next page; it is None on the
+    last page."""
+
+    items: list[TemplateSummary] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 0
+    offset: int = 0
+
+    @property
+    def next_offset(self) -> int | None:
+        """The `offset` of the next page, or None when this is the last."""
+        nxt = self.offset + len(self.items)
+        return nxt if self.items and nxt < self.total else None
 
 
 # ── Models / routing info ────────────────────────────────────
@@ -163,14 +209,30 @@ class Model(_Base):
 
 class Usage(_Base):
     """Summary returned by `/billing/usage` (the billing router mounts at
-    `/billing`, no `/v1` prefix). Field set intentionally minimal; extra
+    `/billing`, no `/v1` prefix). Today's figures reset at midnight UTC;
+    the monthly ones at the start of the calendar month (UTC). Other
     backend fields surface via `extra=allow`."""
 
-    credits_used_today: int
-    credits_limit_daily: int
+    credits_used_today: int = 0
+    credits_limit_today: int = 0
+    credits_remaining_today: int = 0
+    credits_used_this_month: int = 0
+    credits_limit_this_month: int = 0
+    extractions_today: int = 0
+    extractions_this_month: int = 0
     tier: str | None = None
+    period: str | None = None
     period_start: datetime | None = None
     period_end: datetime | None = None
+
+    @property
+    def credits_limit_daily(self) -> int:
+        """Backward-compat alias for :attr:`credits_limit_today`.
+
+        Earlier SDKs declared a required `credits_limit_daily` field, which
+        the API never sends, so `usage()` failed validation on every real
+        response. Prefer `credits_limit_today`."""
+        return self.credits_limit_today
 
 
 # ── Batch extraction (v0.4.0) ────────────────────────────────

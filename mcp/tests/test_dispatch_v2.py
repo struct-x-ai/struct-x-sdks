@@ -148,20 +148,20 @@ async def test_save_my_schema_minimal(sdk, base_url):
         {"name": "My New Schema", "json_schema": {"type": "object"}},
         sdk,
     )
-    body = route.calls.last.request.read().decode()
-    assert '"name":"My New Schema"' in body or '"name": "My New Schema"' in body
-    assert '"publishable_consent":false' in body or '"publishable_consent": false' in body
+    assert json.loads(route.calls.last.request.read()) == {
+        "name": "My New Schema",
+        "json_schema": {"type": "object"},
+    }
     assert out["slug"] == "my-new-schema"
 
 
 @respx.mock
-async def test_save_my_schema_with_consent(sdk, base_url):
-    """publishable_consent=true signals opt-in to community promotion."""
+async def test_save_my_schema_never_sends_publishable_consent(sdk, base_url):
+    """publishable_consent is set in the dashboard only. An agent that sends
+    it anyway (it is not in the tool's input schema) has it dropped, and so
+    is `category`, which personal schemas don't have."""
     route = respx.post(f"{base_url}/v1/schemas/mine").mock(
-        return_value=httpx.Response(
-            201,
-            json={"slug": "shareable", "publishable_consent": True},
-        )
+        return_value=httpx.Response(201, json={"slug": "shareable"})
     )
     await _dispatch(
         "structx_save_my_schema",
@@ -171,12 +171,16 @@ async def test_save_my_schema_with_consent(sdk, base_url):
             "publishable_consent": True,
             "category": "PAYMENTS",
             "description": "A useful schema.",
+            "slug": "shareable",
         },
         sdk,
     )
-    body = route.calls.last.request.read().decode()
-    assert '"publishable_consent":true' in body or '"publishable_consent": true' in body
-    assert "PAYMENTS" in body
+    assert json.loads(route.calls.last.request.read()) == {
+        "name": "Shareable",
+        "json_schema": {"type": "object"},
+        "description": "A useful schema.",
+        "slug": "shareable",
+    }
 
 
 @respx.mock
@@ -184,21 +188,51 @@ async def test_update_my_schema_partial(sdk, base_url):
     """PATCH only the fields the agent passes — slug isn't in the body."""
     slug = "my-invoice"
     route = respx.patch(f"{base_url}/v1/schemas/mine/{slug}").mock(
-        return_value=httpx.Response(
-            200,
-            json={"slug": slug, "publishable_consent": True},
-        )
+        return_value=httpx.Response(200, json={"slug": slug, "name": "Invoice v2"})
     )
     out = await _dispatch(
         "structx_update_my_schema",
-        {"slug": slug, "publishable_consent": True},
+        {"slug": slug, "name": "Invoice v2", "json_schema": {"type": "object"}},
         sdk,
     )
-    body = route.calls.last.request.read().decode()
-    # slug should NOT appear in the body — it's the path identifier.
-    assert '"slug"' not in body
-    assert '"publishable_consent":true' in body or '"publishable_consent": true' in body
-    assert out["publishable_consent"] is True
+    # slug is the path identifier, not part of the body.
+    assert json.loads(route.calls.last.request.read()) == {
+        "name": "Invoice v2",
+        "json_schema": {"type": "object"},
+    }
+    assert out["name"] == "Invoice v2"
+
+
+@respx.mock
+async def test_update_my_schema_drops_fields_the_tool_does_not_list(sdk, base_url):
+    """publishable_consent, org_slug, visibility and category never reach the
+    API from this tool, even when an agent sends them."""
+    slug = "my-invoice"
+    route = respx.patch(f"{base_url}/v1/schemas/mine/{slug}").mock(
+        return_value=httpx.Response(200, json={"slug": slug})
+    )
+    await _dispatch(
+        "structx_update_my_schema",
+        {
+            "slug": slug,
+            "description": "v2",
+            "publishable_consent": True,
+            "org_slug": "acme",
+            "visibility": "org_shared",
+            "category": "PAYMENTS",
+        },
+        sdk,
+    )
+    assert json.loads(route.calls.last.request.read()) == {"description": "v2"}
+
+
+@pytest.mark.parametrize("tool", [SAVE_MY_SCHEMA_TOOL, UPDATE_MY_SCHEMA_TOOL], ids=lambda t: t.name)
+def test_schema_write_tools_do_not_offer_consent_or_category(tool):
+    props = tool.inputSchema["properties"]
+    assert "publishable_consent" not in props
+    assert "category" not in props
+    assert "publishable_consent" not in tool.description
+    assert "community catalog" in tool.description and "dashboard" in tool.description
 
 
 @respx.mock
@@ -328,6 +362,25 @@ def test_augment_tool_requires_content():
     assert "content_type" not in AUGMENT_SCHEMA_TOOL.inputSchema["required"]
 
 
+@respx.mock
+async def test_augment_schema_never_calls_feedback(sdk, base_url):
+    """Before the fix, augment posted to /feedback, which records feedback and
+    never refines anything."""
+    event_id = "rec_evt_42"
+    prefix = f"{base_url}/v1/schemas/recommendations/{event_id}"
+    feedback = respx.post(f"{prefix}/feedback").mock(return_value=httpx.Response(204))
+    augment = respx.post(f"{prefix}/augment").mock(
+        return_value=httpx.Response(200, json=_AUGMENT_RESPONSE)
+    )
+    await _dispatch(
+        "structx_augment_schema",
+        {"event_id": event_id, "guidance": "drop trace_id", "content": "sample text"},
+        sdk,
+    )
+    assert augment.call_count == 1
+    assert feedback.call_count == 0
+
+
 # ── usage + personal schemas with an API key only ───────────
 
 
@@ -336,7 +389,7 @@ def test_augment_tool_requires_content():
     "tool,arguments,method,path,status,body",
     [
         ("structx_usage", {}, "GET", "/billing/usage", 200,
-         {"credits_used_today": 1, "credits_limit_daily": 17}),
+         {"credits_used_today": 1, "credits_limit_today": 17}),
         ("structx_list_my_schemas", {}, "GET", "/v1/schemas/mine", 200, []),
         ("structx_get_my_schema", {"slug": "a"}, "GET", "/v1/schemas/mine/a", 200, {"slug": "a"}),
         ("structx_save_my_schema", {"name": "A", "json_schema": {"type": "object"}},

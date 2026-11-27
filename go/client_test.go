@@ -280,7 +280,7 @@ func TestRetry_ReadRetriesOn503ThenSucceeds(t *testing.T) {
 			_, _ = io.WriteString(w, `{"error":"down","code":"unavailable"}`)
 			return
 		}
-		_, _ = io.WriteString(w, `{"credits_used_today":5,"credits_limit_daily":100}`)
+		_, _ = io.WriteString(w, `{"credits_used_today":5,"credits_limit_today":100}`)
 	}))
 	defer srv.Close()
 	c := mustClient(t, srv.URL, WithHTTPClient(srv.Client()), WithRetryPolicy(fastRetry(3)))
@@ -529,7 +529,7 @@ func TestUsage_PathAndBearerHeader(t *testing.T) {
 		gotAuth = r.Header.Get("Authorization")
 		gotAPIKey = r.Header.Get("X-API-Key")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"credits_used_today":7,"credits_limit_daily":334,"tier":"developer"}`)
+		_, _ = io.WriteString(w, `{"credits_used_today":7,"credits_limit_today":334,"tier":"developer"}`)
 	}))
 	defer srv.Close()
 	c := mustClient(t, srv.URL, WithHTTPClient(srv.Client()), WithBearerToken("jwt_test"))

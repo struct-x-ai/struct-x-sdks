@@ -51,6 +51,8 @@ from ._models import (
     ProjectionOut,
     Recommendation,
     Template,
+    TemplatePage,
+    TemplateSummary,
     TokenCounts,
     Usage,
 )
@@ -80,6 +82,8 @@ __all__ = [
     "InferredField",
     "Recommendation",
     "Template",
+    "TemplatePage",
+    "TemplateSummary",
     "Model",
     "Usage",
     "BatchExtraction",

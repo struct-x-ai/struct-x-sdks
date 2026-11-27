@@ -107,7 +107,9 @@ export interface InferenceResult extends OpenObject {
 // ── /v1/schemas (template gallery) ───────────────────────────
 
 /**
- * One row from GET /v1/schemas. The wire field for the JSON Schema is
+ * One row from GET /v1/schemas, returned by `listTemplates()`, which
+ * downloads the whole catalog at once. For one page of the catalog use
+ * `browseTemplates()` (`TemplatePage`). The wire field for the JSON Schema is
  * `"schema"` but TypeScript / JavaScript don't reserve that name the
  * way Pydantic does, so we keep the wire name. Callers do `tpl.schema`
  * directly — no alias dance.
@@ -122,6 +124,51 @@ export interface Template extends OpenObject {
   usage_count?: number | null;
   acceptance_rate?: number | null;
   avg_confidence?: number | null;
+}
+
+// ── /v1/templates (paged catalog) ────────────────────────────
+
+/**
+ * One catalog row from GET /v1/templates (`browseTemplates()`). Carries no
+ * JSON Schema; `getTemplate(slug)` returns one template's full schema.
+ * `field_counts` holds the number of fields per tier.
+ */
+export interface TemplateSummary extends OpenObject {
+  slug: string;
+  name: string;
+  id?: string;
+  family_slug?: string;
+  version?: string;
+  description?: string | null;
+  category?: string | null;
+  vendor?: string | null;
+  vendor_display_name?: string | null;
+  log_type?: string | null;
+  tags?: string[];
+  is_first_party?: boolean;
+  default_tier?: string;
+  field_counts?: {
+    required: number;
+    recommended: number;
+    optional: number;
+    extended: number;
+    total: number;
+  };
+  usage_count?: number;
+  published_at?: string | null;
+}
+
+/**
+ * One page of the template catalog (GET /v1/templates). `total` counts
+ * every template that matches the filters. `next_offset` is added by the
+ * SDK: pass it as `offset` for the next page; it is `null` on the last page.
+ */
+export interface TemplatePage extends OpenObject {
+  items: TemplateSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset: number | null;
 }
 
 // ── /v1/models ───────────────────────────────────────────────
@@ -140,10 +187,26 @@ export interface Model extends OpenObject {
 
 // ── /billing/usage (billing router mounts at /billing, no /v1) ──
 
+/**
+ * Today's figures reset at midnight UTC; the monthly ones at the start of
+ * the calendar month (UTC).
+ */
 export interface Usage extends OpenObject {
   credits_used_today: number;
+  credits_limit_today: number;
+  credits_remaining_today: number;
+  credits_used_this_month?: number;
+  credits_limit_this_month?: number;
+  extractions_today?: number;
+  extractions_this_month?: number;
+  /**
+   * @deprecated The API never sends this field; `usage()` fills it from
+   * `credits_limit_today`. Use `credits_limit_today`.
+   */
   credits_limit_daily: number;
   tier?: string | null;
+  /** Today's date, `YYYY-MM-DD` (UTC). */
+  period?: string;
   period_start?: string | null;
   period_end?: string | null;
 }

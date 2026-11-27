@@ -86,6 +86,8 @@ Every method authenticates with your API key (`X-API-Key`), set with `NewClient(
 
 With an API key, the personal-schema methods write personal schemas only. Binding a schema to an organization or sharing it is done in the dashboard; the API answers a 403 (`errors.Is(err, structx.ErrPermissionDenied)`, code `api_key_personal_schemas_only`) to an org write made with an API key.
 
+Opting a schema into community-catalog promotion (`PublishableConsent`) is also done in the dashboard. `SaveMySchema` sends `publishable_consent` only when `PublishableConsent` is true, and `UpdateMySchema` only when it is non-nil; with an API key, either one that sets or changes it gets a 403 (`errors.Is(err, structx.ErrPermissionDenied)`, code `publishable_consent_portal_only`).
+
 A JWT bearer token (`WithBearerToken("ey...")` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
 ## Configuration
@@ -121,7 +123,8 @@ client, err := structx.NewClient("sx_...",
 | `Extract` | `POST /v1/extract` |
 | `BatchExtract` | `POST /v1/extract/batch` |
 | `InferSchema` | `POST /v1/schemas/infer` |
-| `ListTemplates` | `GET /v1/schemas` |
+| `BrowseTemplates` (preferred) | `GET /v1/templates` (one page, 25 by default) |
+| `ListTemplates` | `GET /v1/schemas` (the whole gallery, several MB) |
 | `ListModels` | `GET /v1/models` (operator-only) |
 | `Usage` | `GET /billing/usage` |
 | `ListCategories` / `GetTemplate` | `GET /v1/templates/categories`, `GET /v1/templates/{slug}` |
@@ -133,6 +136,28 @@ client, err := structx.NewClient("sx_...",
 | `GetTemplateCostEstimate` / `ListTemplateVersions` | `GET /v1/templates/{slug}/cost-estimate`, `…/versions` |
 
 This matches the Python (`structx-sdk`) and Node (`@struct-x/sdk`) SDKs at their 0.4.0 line. Every method takes `context.Context` first.
+
+## Browse the template catalog
+
+`BrowseTemplates` returns one page of the catalog, 25 templates by default (`Limit` 1-500), filtered by tag tokens (`Q`), `Category`, `Vendor`, a curated `Tag` facet or `FirstParty`. Items carry no JSON Schema; `GetTemplate` returns one. `ListTemplates` still returns the whole gallery with every schema in one response of several MB; prefer `BrowseTemplates`.
+
+```go
+params := structx.BrowseTemplatesParams{Q: "stripe", Category: "PAYMENTS"}
+for {
+	page, err := client.BrowseTemplates(ctx, params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, t := range page.Items {
+		fmt.Println(t.Slug, t.FieldCounts.Required)
+	}
+	next, ok := page.NextOffset()
+	if !ok {
+		break
+	}
+	params.Offset = next
+}
+```
 
 ## Infer a schema, then refine it
 
@@ -229,7 +254,7 @@ ErrStructX
 
 ## Retries
 
-Read calls (`ListTemplates`, `ListModels`, `Usage`, the catalog / synth / canonical getters) auto-retry transient 5xx and transport errors with exponential backoff (capped at 30s, honoring `Retry-After`).
+Read calls (`BrowseTemplates`, `ListTemplates`, `ListModels`, `Usage`, the catalog / synth / canonical getters) auto-retry transient 5xx and transport errors with exponential backoff (capped at 30s, honoring `Retry-After`).
 
 Write calls (`Extract`, `BatchExtract`, `InferSchema`, `AugmentSchema`, `Synthesize`) retry **only** on transport errors, never on a 5xx — a 5xx after a partial backend run may already have billed the call. `429` is never auto-retried; it surfaces as `ErrRateLimit` so your application can decide how to back off.
 

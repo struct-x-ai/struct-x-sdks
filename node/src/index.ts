@@ -33,6 +33,7 @@ export type {
   ExtractOptions,
   ExtractFileOptions,
   InferSchemaOptions,
+  BrowseTemplatesOptions,
   AugmentSchemaOptions,
   SaveMySchemaOptions,
   UpdateMySchemaFields,
@@ -73,6 +74,8 @@ export type {
   OpenObject,
   Recommendation,
   Template,
+  TemplatePage,
+  TemplateSummary,
   TokenCounts,
   Usage,
 } from './models.js';

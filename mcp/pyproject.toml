@@ -46,6 +46,9 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    # test_tool_schemas_and_paging.py validates every tool's input schema.
+    # Already installed with mcp; listed because the tests import it.
+    "jsonschema>=4.20",
 ]
 
 [project.scripts]

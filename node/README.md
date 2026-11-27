@@ -52,6 +52,8 @@ Every method authenticates with your API key (`X-API-Key`), set with `apiKey: 's
 
 With an API key, the personal-schema methods write personal schemas only. Binding a schema to an organization or sharing it is done in the dashboard; the API answers a 403 (`PermissionDeniedError`, code `api_key_personal_schemas_only`) to an org write made with an API key.
 
+Opting a schema into community-catalog promotion (`publishableConsent`) is also done in the dashboard. The SDK sends `publishable_consent` only when you set it; with an API key, `saveMySchema({ ..., publishableConsent: true })`, or an `updateMySchema()` that changes it, gets a 403 (`PermissionDeniedError`, code `publishable_consent_portal_only`).
+
 A JWT bearer token (`bearerToken: 'ey...'` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
 ## Configuration
@@ -115,12 +117,22 @@ console.log(result.inferred.json_schema);    // a valid JSON Schema you can pass
 console.log(result.recommendations);          // matching catalog templates
 ```
 
-### `listTemplates()` / `listModels()` / `usage()`
+### `browseTemplates()` / `listModels()` / `usage()`
 
 ```ts
-const templates = await client.listTemplates();
+// One page of the catalog (GET /v1/templates), 25 per page by default.
+// Items carry no JSON Schema; getTemplate(slug) returns one.
+let page = await client.browseTemplates({ q: 'stripe', category: 'PAYMENTS' });
+console.log(page.total, page.items.map((t) => t.slug));
+while (page.next_offset !== null) {            // null on the last page
+  page = await client.browseTemplates({ q: 'stripe', offset: page.next_offset });
+}
+
 const usage = await client.usage();
+console.log(usage.credits_used_today, usage.credits_limit_today);
 ```
+
+`browseTemplates()` also takes `vendor`, `tag` (a curated `prefix:value` facet such as `input:document`), `firstParty` and `limit` (1-500). `listTemplates()` still returns the whole gallery (`GET /v1/schemas`) with every schema in one response of several MB; prefer `browseTemplates()`.
 
 `listModels()` is operator-only post audit H6 — non-admin keys get `403`.
 
@@ -143,13 +155,11 @@ agent loop without round-tripping through the Schema Studio UI.
 // List
 const mine = await client.listMySchemas();
 
-// Save (publishableConsent: true is opt-in to admin review for the public catalog)
+// Save as a personal schema
 const saved = await client.saveMySchema({
   name: 'My receipts schema',
   jsonSchema: { type: 'object', properties: { total_cents: { type: 'integer' } } },
   description: 'Internal receipts ingest',
-  category: 'finance',
-  publishableConsent: false,
 });
 
 // Patch — pass only the fields you want to change

@@ -191,15 +191,57 @@ EXTRACT_FROM_URL_TOOL = Tool(
 LIST_TEMPLATES_TOOL = Tool(
     name="structx_list_templates",
     description=(
-        "List every public template in the struct-x catalog. Each template has a "
-        "slug (e.g. 'logs.stripe.event'), a name, a description, an optional "
-        "category, and the underlying JSON Schema. Use this to discover what "
-        "schemas already exist BEFORE writing your own — chances are someone "
-        "(possibly the platform team, possibly another user via promotion) has "
-        "already published a template for the format you care about. "
-        "Pair with `structx_extract(template_slug=...)` to skip schema-writing entirely."
+        "List public templates in the struct-x catalog one page at a time: 25 per "
+        "page by default, at most 50. Each item has a slug (e.g. "
+        "'logs.stripe.event'), name, description, category, vendor, tags and "
+        "per-tier field counts, but no JSON Schema; structx_get_template returns "
+        "one template's full schema. Filter with `q` (tag words such as "
+        "'stripe payments'; a template must carry every word) and `category` (a "
+        "code such as 'PAYMENTS'). The response has `total` and `next_offset`: "
+        "pass `next_offset` as `offset` to get the next page; it is null on the "
+        "last page. Use this to find an existing template before writing a "
+        "schema; a slug can be passed as `template_slug` to structx_extract."
     ),
-    inputSchema={"type": "object", "properties": {}},
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "q": {
+                "type": "string",
+                "maxLength": 100,
+                "description": (
+                    "Tag words separated by spaces, e.g. 'stripe' or 'aws "
+                    "cloudtrail'. A template matches only if it carries every "
+                    "word as a tag; tags come from the vendor, category, log type "
+                    "and family names. Case-insensitive; letters, digits, spaces, "
+                    "'.', '_' and '-' only."
+                ),
+            },
+            "category": {
+                "type": "string",
+                "maxLength": 50,
+                "description": (
+                    "Category code such as 'PAYMENTS' or 'CLOUD_INFRA' (the codes "
+                    "structx_list_categories returns). Case-insensitive."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "default": 25,
+                "description": "Templates per page, 1-50 (default 25).",
+            },
+            "offset": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 0,
+                "description": (
+                    "How many matching templates to skip (default 0). Pass the "
+                    "previous page's `next_offset`."
+                ),
+            },
+        },
+    },
 )
 
 
@@ -299,11 +341,10 @@ SAVE_MY_SCHEMA_TOOL = Tool(
     description=(
         "Persist a new JSON Schema to the caller's account. Returns the saved "
         "row including its server-generated slug. Use this after inferring a "
-        "schema (structx_infer_schema) the agent wants to reuse. Pass "
-        "publishable_consent=true to opt into community-catalog promotion "
-        "(admin review gates publication). With an API key this saves a "
-        "personal schema only; binding a schema to an organization or sharing "
-        "it is done in the struct-x dashboard."
+        "schema (structx_infer_schema) the agent wants to reuse. With an API key "
+        "this saves a personal schema only; binding a schema to an organization "
+        "or sharing it is done in the struct-x dashboard, and so is offering it "
+        "to the public community catalog."
     ),
     inputSchema={
         "type": "object",
@@ -327,18 +368,6 @@ SAVE_MY_SCHEMA_TOOL = Tool(
                 "type": "string",
                 "description": "What does this schema extract?",
             },
-            "category": {
-                "type": "string",
-                "description": "Optional category (see structx_list_categories).",
-            },
-            "publishable_consent": {
-                "type": "boolean",
-                "default": False,
-                "description": (
-                    "Opt in to community-catalog promotion. Only published "
-                    "after admin review."
-                ),
-            },
         },
         "required": ["name", "json_schema"],
     },
@@ -348,21 +377,19 @@ SAVE_MY_SCHEMA_TOOL = Tool(
 UPDATE_MY_SCHEMA_TOOL = Tool(
     name="structx_update_my_schema",
     description=(
-        "Patch one of the caller's saved schemas. Pass only the fields you want "
-        "to change. Common use: toggling publishable_consent to opt in or out of "
-        "community publication. With an API key only personal schemas can be "
-        "changed; binding a schema to an organization or sharing it is done in "
-        "the struct-x dashboard."
+        "Patch one of the caller's saved schemas: its name, description or JSON "
+        "Schema. Pass only the fields you want to change. With an API key only "
+        "personal schemas can be changed; binding a schema to an organization or "
+        "sharing it is done in the struct-x dashboard, and so is offering it to "
+        "the public community catalog."
     ),
     inputSchema={
         "type": "object",
         "properties": {
             "slug": {"type": "string", "description": "Schema slug to update."},
-            "name": {"type": "string"},
-            "description": {"type": "string"},
-            "json_schema": {"type": "object"},
-            "category": {"type": "string"},
-            "publishable_consent": {"type": "boolean"},
+            "name": {"type": "string", "description": "New human-readable name."},
+            "description": {"type": "string", "description": "New description."},
+            "json_schema": {"type": "object", "description": "Replacement JSON Schema body."},
         },
         "required": ["slug"],
     },

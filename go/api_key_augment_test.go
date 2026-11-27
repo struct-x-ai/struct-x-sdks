@@ -27,7 +27,7 @@ func TestAPIKeyOnly_UsageAndPersonalSchemas(t *testing.T) {
 		name, method, path, body string
 		call                     func(c *Client) error
 	}{
-		{"Usage", http.MethodGet, "/billing/usage", `{"credits_used_today":3,"credits_limit_daily":334}`,
+		{"Usage", http.MethodGet, "/billing/usage", `{"credits_used_today":3,"credits_limit_today":334}`,
 			func(c *Client) error { _, err := c.Usage(context.Background()); return err }},
 		{"ListMySchemas", http.MethodGet, "/v1/schemas/mine", `[{"slug":"a"}]`,
 			func(c *Client) error { _, err := c.ListMySchemas(context.Background()); return err }},
