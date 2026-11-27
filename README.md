@@ -8,6 +8,7 @@ Official client libraries and the MCP server for the [Struct-X](https://struct-x
 | Node / TypeScript SDK | `npm install @struct-x/sdk` | [`node/`](node/) |
 | Go SDK | `go get github.com/struct-x-ai/struct-x-sdks/go` | [`go/`](go/) |
 | MCP server (for Claude and other MCP clients) | `pip install structx-mcp` | [`mcp/`](mcp/) |
+| Claude Code plugin (the MCP server plus an extraction skill) | `claude plugin marketplace add struct-x-ai/struct-x-sdks`, then `claude plugin install struct-x@struct-x` | [`claude-plugin/`](claude-plugin/) |
 
 You need an API key from [struct-x.ai](https://struct-x.ai). Full documentation: [docs.struct-x.ai](https://docs.struct-x.ai).
 
