@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -185,8 +186,43 @@ type ExtractRequest struct {
 	TemplateSlug string
 	// Tier is the field-depth dial ("required" default … "extended").
 	Tier string
-	// Options is forwarded as-is (include_citations, use_cache, …).
+	// Options is forwarded to the backend (include_citations, cache,
+	// confidence_threshold, …). "cache": false skips the extraction cache.
+	// The older name "use_cache" still works: it is sent as "cache"; both
+	// with different values is an error.
 	Options map[string]any
+}
+
+// extractOptions returns the options map sent to /v1/extract and
+// /v1/extract/batch.
+//
+// The server's name for the cache switch is "cache". Releases up to 0.2.0
+// documented "use_cache" instead, which older servers ignore, so
+// {"use_cache": false} never skipped the cache. "use_cache" is still
+// accepted: it is sent as "cache". Both with different values returns an
+// error wrapping ErrStructX before any request (the server answers 422). A
+// nil "use_cache" counts as not given. The caller's map is not changed.
+func extractOptions(opts map[string]any) (map[string]any, error) {
+	useCache, ok := opts["use_cache"]
+	if !ok {
+		return opts, nil
+	}
+	wire := make(map[string]any, len(opts))
+	for k, v := range opts {
+		if k != "use_cache" {
+			wire[k] = v
+		}
+	}
+	if useCache == nil {
+		return wire, nil
+	}
+	if cache, ok := wire["cache"]; ok && cache != nil && !reflect.DeepEqual(cache, useCache) {
+		return nil, fmt.Errorf(
+			"structx: options has both \"cache\" and \"use_cache\" with different values; "+
+				"they are the same option, so pass only \"cache\": %w", ErrStructX)
+	}
+	wire["cache"] = useCache
+	return wire, nil
 }
 
 // Extract runs a structured extraction against req.Content.
@@ -203,7 +239,11 @@ func (c *Client) Extract(ctx context.Context, req ExtractRequest) (*Extraction, 
 		body["template_slug"] = req.TemplateSlug
 	}
 	if req.Options != nil {
-		body["options"] = req.Options
+		opts, err := extractOptions(req.Options)
+		if err != nil {
+			return nil, err
+		}
+		body["options"] = opts
 	}
 	var out Extraction
 	if err := c.doJSON(ctx, http.MethodPost, "/v1/extract", body, nil, &out); err != nil {
@@ -399,8 +439,9 @@ type BatchItem struct {
 type BatchExtractRequest struct {
 	// Items are the per-item extraction requests. 1..100.
 	Items []BatchItem
-	// Options is a batch-wide override forwarded as-is (per-item options are
-	// ignored by the backend).
+	// Options is a batch-wide override, handled as on ExtractRequest
+	// ("use_cache" is sent as "cache"); per-item options are ignored by the
+	// backend.
 	Options map[string]any
 	// OutputFormat controls batch-level serialization ("json" / "ndjson" / "csv").
 	OutputFormat string
@@ -430,7 +471,11 @@ func (c *Client) BatchExtract(ctx context.Context, req BatchExtractRequest) (*Ba
 	}
 	body := map[string]any{"items": items}
 	if req.Options != nil {
-		body["options"] = req.Options
+		opts, err := extractOptions(req.Options)
+		if err != nil {
+			return nil, err
+		}
+		body["options"] = opts
 	}
 	if req.OutputFormat != "" {
 		body["output_format"] = req.OutputFormat

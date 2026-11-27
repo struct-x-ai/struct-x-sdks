@@ -70,9 +70,11 @@ EXTRACT_TOOL = Tool(
                 "type": "object",
                 "description": (
                     "Optional extraction overrides. Common keys: `include_citations` "
-                    "(boolean) to add source snippets per field; `use_cache` (boolean, "
-                    "default true) to allow cached responses; `confidence_threshold` "
-                    "(float 0-1) to flag low-confidence results."
+                    "(boolean) to add source snippets per field; `cache` (boolean, "
+                    "default true) to allow cached responses, false to always run "
+                    "a fresh extraction; `confidence_threshold` (float 0-1) to flag "
+                    "low-confidence results. `use_cache` is accepted as an older "
+                    "name for `cache`; don't send both with different values."
                 ),
             },
         },

@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`options.cache` now reaches the API.** The docs told callers to pass `options={"use_cache": False}`, but the API's key is `cache` and it ignores unknown option keys, so the cache was never skipped. `extract()` and `batch_extract()` (sync and async) now send `use_cache` as `cache`, and the docstrings name `cache`. Passing both with different values raises `StructXError` before the request. The caller's dict is not changed.
+
 ## [0.5.0] — 2026-11-26
 
 Document extraction release: `extract_file()` reads PDFs through `POST /v1/extract/document`. Also fixes the default API base URL.

@@ -4,6 +4,10 @@ All notable changes to `@struct-x/sdk` will be documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`options.cache` now reaches the API.** The docs told callers to pass `options: { use_cache: false }`, but the API's key is `cache` and it ignores unknown option keys, so the cache was never skipped. `extract()` and `batchExtract()` now send `use_cache` as `cache`, and the doc comments name `cache`. Passing both with different values throws `StructXError` before the request. The caller's object is not changed.
+
 ## [0.5.0] — 2026-11-26
 
 Document extraction release: `extractFile()` reads PDFs through `POST /v1/extract/document`. Also fixes the default API base URL.
