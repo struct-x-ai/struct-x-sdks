@@ -1,0 +1,17 @@
+{
+  "name": "struct-x",
+  "description": "Struct-X plugins for Claude Code: structured extraction from HTML, text, JSON and PDFs into validated, typed JSON.",
+  "owner": {
+    "name": "Struct-X",
+    "email": "support@struct-x.ai",
+    "url": "https://struct-x.ai"
+  },
+  "plugins": [
+    {
+      "name": "struct-x",
+      "source": "./claude-plugin",
+      "description": "Structured extraction with per-field confidence scores, backed by the Struct-X API.",
+      "category": "data"
+    }
+  ]
+}
