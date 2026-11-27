@@ -60,6 +60,14 @@ _WRITE_PATHS = frozenset({
     "/v1/extract", "/v1/extract/batch", "/v1/schemas/infer", "/v1/extract/document",
 })
 
+
+def _is_write_path(path: str) -> bool:
+    """`_WRITE_PATHS`, plus `POST /v1/schemas/recommendations/{event_id}/augment`,
+    which bills like `/v1/schemas/infer` but carries an id in its path."""
+    return path in _WRITE_PATHS or (
+        path.startswith("/v1/schemas/recommendations/") and path.endswith("/augment")
+    )
+
 # Document extraction (POST /v1/extract/document): the file is sent base64 in
 # JSON. The server enforces the real limits (5-20 MB by plan); this cap only
 # stops an accidental multi-gigabyte read on the client.
@@ -140,11 +148,10 @@ _EXC_BY_STATUS: dict[int, type[ApiError]] = {
 @dataclass
 class _BaseClient:
     api_key: str
-    # Optional JWT bearer token — the second credential path. Required by
-    # the JWT-only methods (`usage()` + the `/v1/schemas/mine` personal-
-    # schema CRUD), whose backend routes authenticate via
-    # `get_current_user_from_token` (Authorization: Bearer only; an API
-    # key is rejected with 401). The API-key methods keep using X-API-Key.
+    # Optional JWT bearer token, sent as `Authorization: Bearer` when set.
+    # No method requires it: `usage()` and the `/v1/schemas/mine` personal-
+    # schema methods accept the API key too, and the server uses X-API-Key
+    # when a request carries both headers.
     bearer_token: str | None = None
     base_url: str = _DEFAULT_BASE_URL
     timeout: float = 30.0
@@ -166,35 +173,17 @@ class _BaseClient:
             "User-Agent": _USER_AGENT,
             "Accept": "application/json",
         }
-        # API-key credential — used by the dual-auth + API-key methods.
+        # API-key credential — every method works with it.
         if self.api_key:
             h["X-API-Key"] = self.api_key
-        # Bearer (JWT) credential — used by the JWT-only methods. When both
-        # credentials are configured we send both headers and let the
-        # backend pick the right one per endpoint.
+        # Optional bearer (JWT) credential, sent alongside the API key when
+        # set. A route that accepts both uses X-API-Key.
         if self.bearer_token:
             h["Authorization"] = f"Bearer {self.bearer_token}"
         h.update(self.default_headers)
         if extra:
             h.update(extra)
         return h
-
-    def _require_bearer(self, method: str) -> None:
-        """Guard for the JWT-only methods. Raise a clear SDK-side error
-        (instead of letting the request 401) when no bearer token is set.
-
-        These methods (`usage`, and the `list/get/save/update/delete
-        _my_schema` personal-schema CRUD) hit backend routes guarded by
-        `get_current_user_from_token`, which accepts an Authorization:
-        Bearer JWT only — an API key alone is rejected with 401."""
-        if not self.bearer_token:
-            raise StructXError(
-                f"{method}() requires a bearer token (JWT). This endpoint "
-                "authenticates via Authorization: Bearer only — an API key "
-                "alone is rejected with 401. Pass bearer_token=... when "
-                "constructing the client or set the STRUCTX_BEARER_TOKEN "
-                "environment variable."
-            )
 
     def _url(self, path: str) -> str:
         # urljoin requires trailing-slash on base; we ensured that in
@@ -317,7 +306,7 @@ class _BaseClient:
         and the docstring on TransportError."""
         if not self.retry.retry_on_5xx:
             return False
-        if path in _WRITE_PATHS:
+        if _is_write_path(path):
             return False
         return 500 <= status < 600 and status != 501  # Not Implemented isn't transient
 
@@ -597,12 +586,8 @@ class StructX(_BaseClient):
         return [Model.model_validate(m) for m in items]
 
     def usage(self) -> Usage:
-        """Current credit usage for the authenticated user.
-
-        Bearer-token method: the backend mounts this at `/billing/usage`
-        (no `/v1` prefix) and authenticates it via JWT Bearer only. Set
-        `bearer_token=...` on the client (or `STRUCTX_BEARER_TOKEN`)."""
-        self._require_bearer("usage")
+        """Current credit usage for the account that owns the API key
+        (`GET /billing/usage`, no `/v1` prefix)."""
         return Usage.model_validate(self._request("GET", "/billing/usage"))
 
     # ── Catalog browsing (v0.3.0) ──────────────────────────
@@ -619,18 +604,12 @@ class StructX(_BaseClient):
     # ── Personal schemas (v0.3.0) ──────────────────────────
 
     def list_my_schemas(self) -> list[dict[str, Any]]:
-        """List schemas the calling user has saved to their account.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("list_my_schemas")
+        """List schemas the calling user has saved to their account."""
         raw = self._request("GET", "/v1/schemas/mine")
         return raw if isinstance(raw, list) else raw.get("schemas", [])
 
     def get_my_schema(self, slug: str) -> dict[str, Any]:
-        """Fetch one of the caller's saved schemas by slug.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("get_my_schema")
+        """Fetch one of the caller's saved schemas by slug."""
         return self._request("GET", f"/v1/schemas/mine/{slug}")
 
     def save_my_schema(
@@ -643,10 +622,9 @@ class StructX(_BaseClient):
         category: str | None = None,
         publishable_consent: bool = False,
     ) -> dict[str, Any]:
-        """Persist a new JSON Schema to the caller's account.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("save_my_schema")
+        """Persist a new JSON Schema to the caller's account as a personal
+        schema. Binding a schema to an organization or sharing it is done in
+        the dashboard."""
         body: dict[str, Any] = {
             "name": name,
             "json_schema": json_schema,
@@ -664,16 +642,16 @@ class StructX(_BaseClient):
         """Patch one of the caller's schemas. Pass only the fields you
         want to change.
 
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("update_my_schema")
+        With an API key only personal schemas can be changed: sending
+        `org_slug` or `visibility="org_shared"` raises `PermissionDeniedError`
+        (403, code `api_key_personal_schemas_only`). Binding a schema to an
+        organization or sharing it is done in the dashboard."""
         body = {k: v for k, v in fields.items() if v is not None}
         return self._request("PATCH", f"/v1/schemas/mine/{slug}", json=body)
 
     def delete_my_schema(self, slug: str) -> None:
-        """Permanently delete one of the caller's saved schemas.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("delete_my_schema")
+        """Permanently delete one of the caller's saved schemas. With an API
+        key only personal schemas can be deleted."""
         self._request("DELETE", f"/v1/schemas/mine/{slug}")
 
     # ── Schema lifecycle (v0.3.0) ──────────────────────────
@@ -694,14 +672,34 @@ class StructX(_BaseClient):
             body["draft_schema"] = draft_schema
         return self._request("POST", "/v1/schemas/recommend", json=body)
 
-    def augment_schema(self, event_id: str, guidance: str) -> dict[str, Any]:
-        """Refine a schema using natural-language guidance. Requires the
-        event_id from a prior infer/recommend call."""
-        body = {"decision": "augment", "augment_guidance": guidance}
-        return self._request(
-            "POST", f"/v1/schemas/recommendations/{event_id}/feedback",
-            json=body,
-        )
+    def augment_schema(
+        self,
+        event_id: str,
+        guidance: str,
+        content: str,
+        *,
+        content_type: str | None = None,
+    ) -> InferenceResult:
+        """Refine an inferred schema with natural-language guidance
+        (`POST /v1/schemas/recommendations/{event_id}/augment`).
+
+        `event_id` comes from `infer_schema()`, or from an earlier
+        `augment_schema()` to keep refining. `guidance` is 3-2000 characters,
+        e.g. 'rename event_id to id and add a customer_country field'.
+        `content` must be the same content sent to that `infer_schema()`
+        call; the server compares hashes and raises `ValidationError` (400)
+        on a mismatch. `content_type` (`html`, `markdown`, `text` or `json`)
+        is detected when omitted.
+
+        Returns the refined schema as an `InferenceResult` (with no
+        recommendations) and a new `event_id`. Billed like `infer_schema()`,
+        so a 5xx is not retried."""
+        body: dict[str, Any] = {"guidance": guidance, "content": content}
+        if content_type is not None:
+            body["content_type"] = content_type
+        return InferenceResult.model_validate(self._request(
+            "POST", f"/v1/schemas/recommendations/{event_id}/augment", json=body,
+        ))
 
     # ── Synthetic data (v0.4.0) ────────────────────────────
 
@@ -1121,12 +1119,8 @@ class AsyncStructX(_BaseClient):
         return [Model.model_validate(m) for m in items]
 
     async def usage(self) -> Usage:
-        """Current credit usage for the authenticated user.
-
-        Bearer-token method: the backend mounts this at `/billing/usage`
-        (no `/v1` prefix) and authenticates it via JWT Bearer only. Set
-        `bearer_token=...` on the client (or `STRUCTX_BEARER_TOKEN`)."""
-        self._require_bearer("usage")
+        """Current credit usage for the account that owns the API key
+        (`GET /billing/usage`, no `/v1` prefix)."""
         return Usage.model_validate(await self._request("GET", "/billing/usage"))
 
     # ── Catalog browsing (v0.2.0) ──────────────────────────
@@ -1143,18 +1137,12 @@ class AsyncStructX(_BaseClient):
     # ── Personal schemas (v0.2.0) ──────────────────────────
 
     async def list_my_schemas(self) -> list[dict[str, Any]]:
-        """List schemas the calling user has saved to their account.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("list_my_schemas")
+        """List schemas the calling user has saved to their account."""
         raw = await self._request("GET", "/v1/schemas/mine")
         return raw if isinstance(raw, list) else raw.get("schemas", [])
 
     async def get_my_schema(self, slug: str) -> dict[str, Any]:
-        """Fetch one of the caller's saved schemas by slug.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("get_my_schema")
+        """Fetch one of the caller's saved schemas by slug."""
         return await self._request("GET", f"/v1/schemas/mine/{slug}")
 
     async def save_my_schema(
@@ -1167,11 +1155,10 @@ class AsyncStructX(_BaseClient):
         category: str | None = None,
         publishable_consent: bool = False,
     ) -> dict[str, Any]:
-        """Persist a new JSON Schema to the caller's account. Returns the
-        saved row including its server-generated slug if `slug` was None.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("save_my_schema")
+        """Persist a new JSON Schema to the caller's account as a personal
+        schema. Returns the saved row including its server-generated slug if
+        `slug` was None. Binding a schema to an organization or sharing it is
+        done in the dashboard."""
         body: dict[str, Any] = {
             "name": name,
             "json_schema": json_schema,
@@ -1194,18 +1181,18 @@ class AsyncStructX(_BaseClient):
         want to change. `slug` identifies the row; other slug-renames
         require delete+save.
 
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("update_my_schema")
+        With an API key only personal schemas can be changed: sending
+        `org_slug` or `visibility="org_shared"` raises `PermissionDeniedError`
+        (403, code `api_key_personal_schemas_only`). Binding a schema to an
+        organization or sharing it is done in the dashboard."""
         body = {k: v for k, v in fields.items() if v is not None}
         return await self._request("PATCH", f"/v1/schemas/mine/{slug}", json=body)
 
     async def delete_my_schema(self, slug: str) -> None:
         """Permanently delete one of the caller's saved schemas. Community
         copies (if `publishable_consent` was True and an admin published)
-        stay — use request_withdrawal to remove those too.
-
-        Bearer-token method (`/v1/schemas/mine` is JWT-only)."""
-        self._require_bearer("delete_my_schema")
+        stay — use request_withdrawal to remove those too. With an API key
+        only personal schemas can be deleted."""
         await self._request("DELETE", f"/v1/schemas/mine/{slug}")
 
     # ── Schema lifecycle (v0.2.0) ──────────────────────────
@@ -1218,8 +1205,7 @@ class AsyncStructX(_BaseClient):
         k: int = 5,
     ) -> dict[str, Any]:
         """Find existing templates that match content and/or a draft
-        schema. At least one of content / draft_schema must be provided.
-        Returns an event_id you can use with `augment_schema`."""
+        schema. At least one of content / draft_schema must be provided."""
         body: dict[str, Any] = {"k": k}
         if content is not None:
             body["content"] = content
@@ -1231,16 +1217,23 @@ class AsyncStructX(_BaseClient):
         self,
         event_id: str,
         guidance: str,
-    ) -> dict[str, Any]:
-        """Refine a schema (from a prior infer or recommend call) using
-        natural-language guidance. Example: 'rename event_id to id and
-        add a customer_country field'. Requires event_id from a prior
-        infer/recommend response."""
-        body = {"decision": "augment", "augment_guidance": guidance}
-        return await self._request(
-            "POST", f"/v1/schemas/recommendations/{event_id}/feedback",
-            json=body,
-        )
+        content: str,
+        *,
+        content_type: str | None = None,
+    ) -> InferenceResult:
+        """Async counterpart of ``StructX.augment_schema``. Refine an inferred
+        schema with natural-language guidance
+        (`POST /v1/schemas/recommendations/{event_id}/augment`). `event_id`
+        comes from `infer_schema()` or an earlier `augment_schema()`;
+        `content` must be the same content sent to that `infer_schema()`
+        call (a mismatch raises `ValidationError`). Returns an
+        `InferenceResult` with a new `event_id`; a 5xx is not retried."""
+        body: dict[str, Any] = {"guidance": guidance, "content": content}
+        if content_type is not None:
+            body["content_type"] = content_type
+        return InferenceResult.model_validate(await self._request(
+            "POST", f"/v1/schemas/recommendations/{event_id}/augment", json=body,
+        ))
 
     # ── Community (v0.2.0) ─────────────────────────────────
 

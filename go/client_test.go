@@ -283,9 +283,7 @@ func TestRetry_ReadRetriesOn503ThenSucceeds(t *testing.T) {
 		_, _ = io.WriteString(w, `{"credits_used_today":5,"credits_limit_daily":100}`)
 	}))
 	defer srv.Close()
-	// Usage is JWT-only — supply a bearer token so we exercise the retry
-	// loop rather than the up-front bearer guard.
-	c := mustClient(t, srv.URL, WithHTTPClient(srv.Client()), WithRetryPolicy(fastRetry(3)), WithBearerToken("jwt_test"))
+	c := mustClient(t, srv.URL, WithHTTPClient(srv.Client()), WithRetryPolicy(fastRetry(3)))
 
 	u, err := c.Usage(context.Background())
 	if err != nil {
@@ -371,7 +369,6 @@ func TestTransportError_ExhaustsAndTypes(t *testing.T) {
 	c, _ := NewClient("sx_test",
 		WithHTTPClient(&http.Client{Transport: rt}),
 		WithRetryPolicy(fastRetry(2)),
-		WithBearerToken("jwt_test"),
 	)
 	_, err := c.Usage(context.Background())
 	if !errors.Is(err, ErrTransport) {
@@ -524,8 +521,7 @@ func TestExtract_IDDecodesFromWireID(t *testing.T) {
 }
 
 // TestUsage_PathAndBearerHeader covers Bug 2 (path /billing/usage, no /v1)
-// and Bug 3 (a bearer client sends Authorization: Bearer on this JWT-only
-// method, with the API key still riding along).
+// and checks that a bearer token, when set, is sent next to the API key.
 func TestUsage_PathAndBearerHeader(t *testing.T) {
 	var gotPath, gotAuth, gotAPIKey string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -553,29 +549,6 @@ func TestUsage_PathAndBearerHeader(t *testing.T) {
 	}
 	if gotAPIKey != "sx_test" {
 		t.Fatalf("X-API-Key = %q, want sx_test (both credentials sent)", gotAPIKey)
-	}
-}
-
-// TestUsage_RequiresBearer covers Bug 3: a JWT-only method called with no
-// bearer token returns a clear SDK-side error before any request is made.
-func TestUsage_RequiresBearer(t *testing.T) {
-	var called atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called.Add(1)
-		w.WriteHeader(200)
-	}))
-	defer srv.Close()
-	c := mustClient(t, srv.URL, WithHTTPClient(srv.Client())) // no bearer token
-
-	_, err := c.Usage(context.Background())
-	if err == nil {
-		t.Fatal("expected an error calling a JWT-only method with no bearer token")
-	}
-	if !errors.Is(err, ErrStructX) {
-		t.Fatalf("error should match ErrStructX, got %v", err)
-	}
-	if got := called.Load(); got != 0 {
-		t.Fatalf("server calls = %d, want 0 (guard fires before any request)", got)
 	}
 }
 

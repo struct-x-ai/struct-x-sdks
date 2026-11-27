@@ -70,6 +70,21 @@ for r in inference.recommendations:
     print(f"{r.slug} (score={r.score:.2f})")
 ```
 
+Refine the draft with natural-language guidance. Pass the `event_id` from
+`infer_schema()` and the same `content` you sent it; the server checks the
+content against that call and raises `ValidationError` if it differs:
+
+```python
+refined = client.augment_schema(
+    inference.event_id,
+    "rename event_id to id and add a customer_country field",
+    content="<html>… some product page …</html>",   # the same content passed to infer_schema()
+    content_type="html",               # optional; detected when omitted
+)
+print(refined.inferred.json_schema)    # an InferenceResult, like infer_schema()
+# refined.event_id can be refined again with the same content
+```
+
 ## Batch extraction
 
 Extract from up to 100 items in one call. Each item carries `content` plus
@@ -160,30 +175,18 @@ asyncio.run(main())
 
 ## Authentication
 
-The SDK supports two credentials, and different methods need different ones:
+Every method authenticates with your API key (`X-API-Key`), set with `api_key="sx_..."` or `STRUCTX_API_KEY`. That includes `usage()` and the personal-schema methods (`list_my_schemas`, `get_my_schema`, `save_my_schema`, `update_my_schema`, `delete_my_schema`).
 
-| Credential | How to set | Methods that use it |
-|---|---|---|
-| **API key** (`X-API-Key`) | `api_key="sx_..."` or `STRUCTX_API_KEY` | `extract`, `batch_extract`, `infer_schema`, `list_templates`, `recommend_templates`, `synthesize`, canonical projection, template/catalog getters — the whole dual-auth surface. |
-| **Bearer token** (JWT, `Authorization: Bearer`) | `bearer_token="ey..."` or `STRUCTX_BEARER_TOKEN` | `usage()` and the personal-schema CRUD (`list_my_schemas`, `get_my_schema`, `save_my_schema`, `update_my_schema`, `delete_my_schema`). These backend routes accept a dashboard JWT only — an API key is rejected with 401. |
+With an API key, the personal-schema methods write personal schemas only: sending `org_slug` or `visibility="org_shared"` to `update_my_schema()` raises `PermissionDeniedError` (403, code `api_key_personal_schemas_only`). Binding a schema to an organization or sharing it is done in the dashboard.
 
-An API key is always required. Add the bearer token when you also need the JWT-only methods:
-
-```python
-from structx_sdk import StructX
-
-client = StructX(api_key="sx_...", bearer_token="ey...")   # or STRUCTX_BEARER_TOKEN
-usage = client.usage()          # sends Authorization: Bearer
-```
-
-Calling a JWT-only method without a bearer token raises a clear `StructXError` up-front (instead of a 401 round-trip). When both credentials are set, the SDK sends both headers and the backend picks the right one per endpoint.
+A JWT bearer token (`bearer_token="ey..."` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
 ## Configuration
 
 | Param          | Default                       | Notes                                                  |
 |----------------|-------------------------------|--------------------------------------------------------|
 | `api_key`      | `STRUCTX_API_KEY` env var     | Required.                                              |
-| `bearer_token` | `STRUCTX_BEARER_TOKEN` env var | Optional. JWT for the bearer-only methods (`usage`, `/v1/schemas/mine` CRUD). |
+| `bearer_token` | `STRUCTX_BEARER_TOKEN` env var | Optional. Sent as `Authorization: Bearer` when set; no method requires it. |
 | `base_url`     | `STRUCTX_BASE_URL` env var, else `https://api.struct-x.ai` | Override for staging / self-hosted. |
 | `timeout`      | `30.0` seconds                | Applied per request.                                   |
 | `retry`        | `RetryPolicy(max_attempts=3, …)` | Tune via `RetryPolicy(...)`.                        |
@@ -194,7 +197,6 @@ Pick up credentials from the environment with `StructX.from_env()`:
 ```python
 import os
 os.environ["STRUCTX_API_KEY"] = "sx_..."
-os.environ["STRUCTX_BEARER_TOKEN"] = "ey..."   # optional — for usage() + schema CRUD
 
 from structx_sdk import StructX
 client = StructX.from_env()
@@ -238,7 +240,7 @@ StructXError
 
 By default, **read** calls (`list_templates`, `list_models`, `usage`, the canonical / template / synth-dataset getters) auto-retry on transient 5xx and connection errors with exponential backoff.
 
-**Write** calls (`extract`, `batch_extract`, `infer_schema`) retry ONLY on transport errors, never on 5xx — because a 5xx after a partial backend run may have already billed the call.
+**Write** calls (`extract`, `batch_extract`, `infer_schema`, `augment_schema`) retry ONLY on transport errors, never on 5xx — because a 5xx after a partial backend run may have already billed the call.
 
 Customize via `RetryPolicy`:
 

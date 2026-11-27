@@ -91,7 +91,7 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 | **`structx_template_versions`** | List the version history of a template family by its bare slug. |
 | **`structx_list_categories`** | Browse the catalog's category → family → vendor hierarchy. |
 | **`structx_recommend_templates`** | Find existing templates (platform + community + your own) matching content or a draft schema. |
-| **`structx_augment_schema`** | Refine a draft schema with natural-language guidance (needs an event_id from infer/recommend). |
+| **`structx_augment_schema`** | Refine a schema from `structx_infer_schema` with natural-language guidance. Takes that call's `event_id` and the same `content` (the server rejects different content); `content_type` is optional. Returns the refined schema with a new `event_id`. |
 
 ### Canonical projection
 
@@ -101,6 +101,8 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 | **`structx_canonical_project`** | Project an extracted record onto one or more frameworks — deterministic, never re-runs the model, reports unmapped fields. |
 
 ### Personal schemas
+
+These use the server's API key, so they create, change and delete personal schemas only. Binding a schema to an organization or sharing it is done in the struct-x dashboard.
 
 | Tool | What it does |
 |---|---|
@@ -124,7 +126,7 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 
 | Tool | What it does |
 |---|---|
-| **`structx_usage`** | Current credit usage for the API key. Pre-flight check before batches, or post-mortem after a `RateLimitError`. |
+| **`structx_usage`** | Current credit usage for the account that owns the API key. Pre-flight check before batches, or post-mortem after a `RateLimitError`. |
 | **`structx_request_withdrawal`** | Request removal of a community template the caller authored. |
 
 ## Why use an MCP server vs. the SDK directly?

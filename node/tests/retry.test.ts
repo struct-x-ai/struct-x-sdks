@@ -91,6 +91,11 @@ describe('isRetryableResponse', () => {
     expect(isRetryableResponse('/v1/schemas/infer', 500, p)).toBe(false);
   });
 
+  it('treats the augment path (it carries an event id) as a write path', () => {
+    expect(isRetryableResponse('/v1/schemas/recommendations/evt_1/augment', 503, p)).toBe(false);
+    expect(isRetryableResponse('/v1/schemas/recommendations/evt_1/feedback', 503, p)).toBe(true);
+  });
+
   it('treats 501 as permanent, never retries it', () => {
     expect(isRetryableResponse('/v1/schemas', 501, p)).toBe(false);
   });

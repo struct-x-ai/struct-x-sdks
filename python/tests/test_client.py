@@ -234,17 +234,10 @@ def test_usage(bearer_client, base_url):
     assert isinstance(u, Usage)
     assert u.credits_used_today == 42
     assert u.tier == "pro"
-    # Bug 3: JWT-only method sends the bearer token; API key still rides along.
+    # A bearer token, when set, is sent next to the API key.
     req = route.calls.last.request
     assert req.headers["authorization"] == "Bearer jwt_test_token_0123456789"
     assert req.headers["x-api-key"] == bearer_client.api_key
-
-
-def test_usage_requires_bearer_token(client):
-    """Bug 3: calling a JWT-only method with no bearer token raises a
-    clear SDK-side error instead of letting the request 401."""
-    with pytest.raises(StructXError, match="requires a bearer token"):
-        client.usage()
 
 
 @respx.mock
@@ -272,9 +265,9 @@ def test_extract_id_field_decodes(client, base_url):
 
 
 @respx.mock
-def test_list_my_schemas_requires_and_sends_bearer(bearer_client, base_url):
-    """Bug 3: personal-schema CRUD is JWT-only. With a bearer token set,
-    the call succeeds and sends Authorization: Bearer."""
+def test_list_my_schemas_sends_bearer_when_set(bearer_client, base_url):
+    """With a bearer token set, the personal-schema methods still send
+    Authorization: Bearer (next to X-API-Key)."""
     route = respx.get(f"{base_url}/v1/schemas/mine").mock(
         return_value=httpx.Response(200, json={"schemas": [{"slug": "a"}]})
     )
@@ -334,7 +327,7 @@ async def test_async_context_manager_closes(api_key, base_url):
 
 @respx.mock
 async def test_async_usage_bearer_path(abearer_client, base_url):
-    # Bug 2 + Bug 3 on the async client: `/billing/usage` + Authorization.
+    # Bug 2 on the async client: `/billing/usage`; the bearer token is sent when set.
     route = respx.get(f"{base_url}/billing/usage").mock(
         return_value=httpx.Response(
             200, json={"credits_used_today": 3, "credits_limit_daily": 334}
@@ -343,10 +336,3 @@ async def test_async_usage_bearer_path(abearer_client, base_url):
     u = await abearer_client.usage()
     assert u.credits_used_today == 3
     assert route.calls.last.request.headers["authorization"].startswith("Bearer ")
-
-
-async def test_async_usage_requires_bearer(aclient):
-    from structx_sdk import StructXError
-
-    with pytest.raises(StructXError, match="requires a bearer token"):
-        await aclient.usage()

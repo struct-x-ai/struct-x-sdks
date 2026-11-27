@@ -361,9 +361,13 @@ async def _dispatch(
         )
 
     if name == "structx_augment_schema":
-        return await sdk.augment_schema(
-            arguments["event_id"], arguments["guidance"],
+        result = await sdk.augment_schema(
+            arguments["event_id"],
+            arguments["guidance"],
+            arguments["content"],
+            content_type=arguments.get("content_type"),
         )
+        return result.model_dump()
 
     if name == "structx_request_withdrawal":
         return await sdk.request_withdrawal(

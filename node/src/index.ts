@@ -33,6 +33,7 @@ export type {
   ExtractOptions,
   ExtractFileOptions,
   InferSchemaOptions,
+  AugmentSchemaOptions,
   SaveMySchemaOptions,
   UpdateMySchemaFields,
   RecommendTemplatesOptions,

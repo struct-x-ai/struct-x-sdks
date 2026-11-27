@@ -50,8 +50,8 @@ def client(api_key, base_url) -> StructX:
 
 @pytest.fixture
 def bearer_client(api_key, base_url, bearer_token) -> StructX:
-    """A client carrying BOTH an API key and a JWT bearer token — needed
-    for the JWT-only methods (`usage`, the `/v1/schemas/mine` CRUD)."""
+    """A client carrying BOTH an API key and a JWT bearer token. Both
+    headers are sent on every request."""
     return StructX(
         api_key=api_key,
         base_url=base_url,
@@ -73,7 +73,7 @@ async def aclient(api_key, base_url):
 
 @pytest.fixture
 async def abearer_client(api_key, base_url, bearer_token):
-    """Async client carrying both credentials (JWT-only methods)."""
+    """Async client carrying both credentials."""
     c = AsyncStructX(
         api_key=api_key,
         base_url=base_url,

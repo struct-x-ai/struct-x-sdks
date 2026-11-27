@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -82,6 +83,16 @@ var writePaths = map[string]struct{}{
 	"/v1/extract/document": {},
 }
 
+// isWritePath reports whether path is in writePaths or is
+// POST /v1/schemas/recommendations/{event_id}/augment, which bills like
+// /v1/schemas/infer but carries an id in its path.
+func isWritePath(path string) bool {
+	if _, ok := writePaths[path]; ok {
+		return true
+	}
+	return strings.HasPrefix(path, "/v1/schemas/recommendations/") && strings.HasSuffix(path, "/augment")
+}
+
 // isRetryableResponse reports whether a 5xx response on path should be retried
 // under policy. Writes never retry on 5xx; 501 Not Implemented is a permanent
 // rejection, not transient.
@@ -89,7 +100,7 @@ func isRetryableResponse(path string, status int, policy RetryPolicy) bool {
 	if !policy.RetryOn5xx {
 		return false
 	}
-	if _, isWrite := writePaths[path]; isWrite {
+	if isWritePath(path) {
 		return false
 	}
 	return status >= 500 && status < 600 && status != 501

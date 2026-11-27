@@ -48,13 +48,11 @@ func WithBaseURL(u string) Option {
 	}
 }
 
-// WithBearerToken sets an optional JWT bearer token — the second credential
-// path (default: the STRUCTX_BEARER_TOKEN env var). It is required by the
-// JWT-only methods (Usage + the /v1/schemas/mine personal-schema CRUD), whose
-// backend routes authenticate via Authorization: Bearer only — an API key is
-// rejected with 401. The API-key methods keep using X-API-Key. When both
-// credentials are set, both headers are sent and the backend picks per
-// endpoint. An empty token is ignored (keeps any env-derived value).
+// WithBearerToken sets an optional JWT bearer token (default: the
+// STRUCTX_BEARER_TOKEN env var), sent as Authorization: Bearer when set. No
+// method requires it: Usage and the /v1/schemas/mine personal-schema methods
+// accept the API key too, and the server uses X-API-Key when a request carries
+// both headers. An empty token is ignored (keeps any env-derived value).
 func WithBearerToken(token string) Option {
 	return func(c *Client) {
 		if token != "" {
@@ -153,24 +151,6 @@ func NewClient(apiKey string, opts ...Option) (*Client, error) {
 
 // BaseURL returns the normalized base URL (always ending in "/").
 func (c *Client) BaseURL() string { return c.baseURL }
-
-// requireBearer guards the JWT-only methods. It returns a clear SDK-side
-// error (instead of letting the request 401) when no bearer token is set.
-// These methods (Usage + the /v1/schemas/mine personal-schema CRUD) hit
-// backend routes guarded by get_current_user_from_token, which accepts an
-// Authorization: Bearer JWT only — an API key alone gets 401.
-func (c *Client) requireBearer(method string) error {
-	if c.bearerToken == "" {
-		return fmt.Errorf(
-			"structx: %s requires a bearer token (JWT) — this endpoint "+
-				"authenticates via Authorization: Bearer only; an API key alone "+
-				"is rejected with 401. Use WithBearerToken(...) or set "+
-				"STRUCTX_BEARER_TOKEN: %w",
-			method, ErrStructX,
-		)
-	}
-	return nil
-}
 
 // ── Public API: core ─────────────────────────────────────────
 
@@ -407,16 +387,9 @@ func (c *Client) ListModels(ctx context.Context) ([]Model, error) {
 	return decodeList[Model](data, "models")
 }
 
-// Usage returns current credit usage for the authenticated user
+// Usage returns current credit usage for the account that owns the API key
 // (GET /billing/usage — the billing router mounts at /billing, no /v1).
-//
-// Bearer-token method: authenticated via JWT Bearer only. Set a token with
-// WithBearerToken(...) or STRUCTX_BEARER_TOKEN, or Usage returns an error
-// (matching errors.Is(err, ErrStructX)) before making a request.
 func (c *Client) Usage(ctx context.Context) (*Usage, error) {
-	if err := c.requireBearer("Usage"); err != nil {
-		return nil, err
-	}
 	var out Usage
 	if err := c.doJSON(ctx, http.MethodGet, "/billing/usage", nil, nil, &out); err != nil {
 		return nil, err
@@ -506,11 +479,7 @@ func (c *Client) GetTemplate(ctx context.Context, slug string) (map[string]any, 
 // ── Public API: personal schemas ─────────────────────────────
 
 // ListMySchemas lists schemas the calling user has saved to their account.
-// Bearer-token method (/v1/schemas/mine is JWT-only).
 func (c *Client) ListMySchemas(ctx context.Context) ([]map[string]any, error) {
-	if err := c.requireBearer("ListMySchemas"); err != nil {
-		return nil, err
-	}
 	data, err := c.request(ctx, http.MethodGet, "/v1/schemas/mine", nil, nil, nil)
 	if err != nil {
 		return nil, err
@@ -519,11 +488,7 @@ func (c *Client) ListMySchemas(ctx context.Context) ([]map[string]any, error) {
 }
 
 // GetMySchema fetches one of the caller's saved schemas by slug.
-// Bearer-token method (/v1/schemas/mine is JWT-only).
 func (c *Client) GetMySchema(ctx context.Context, slug string) (map[string]any, error) {
-	if err := c.requireBearer("GetMySchema"); err != nil {
-		return nil, err
-	}
 	return c.doMap(ctx, http.MethodGet, "/v1/schemas/mine/"+url.PathEscape(slug), nil, nil)
 }
 
@@ -537,12 +502,10 @@ type SaveSchemaParams struct {
 	PublishableConsent bool
 }
 
-// SaveMySchema persists a new JSON Schema to the caller's account.
-// Bearer-token method (/v1/schemas/mine is JWT-only).
+// SaveMySchema persists a new JSON Schema to the caller's account as a
+// personal schema. Binding a schema to an organization or sharing it is done in
+// the dashboard.
 func (c *Client) SaveMySchema(ctx context.Context, params SaveSchemaParams) (map[string]any, error) {
-	if err := c.requireBearer("SaveMySchema"); err != nil {
-		return nil, err
-	}
 	body := map[string]any{
 		"name":                params.Name,
 		"json_schema":         params.JSONSchema,
@@ -570,12 +533,10 @@ type SchemaUpdate struct {
 	PublishableConsent *bool
 }
 
-// UpdateMySchema patches one of the caller's schemas.
-// Bearer-token method (/v1/schemas/mine is JWT-only).
+// UpdateMySchema patches one of the caller's schemas. With an API key only
+// personal schemas can be changed; binding a schema to an organization or
+// sharing it is done in the dashboard.
 func (c *Client) UpdateMySchema(ctx context.Context, slug string, update SchemaUpdate) (map[string]any, error) {
-	if err := c.requireBearer("UpdateMySchema"); err != nil {
-		return nil, err
-	}
 	body := map[string]any{}
 	if update.Name != nil {
 		body["name"] = *update.Name
@@ -595,12 +556,9 @@ func (c *Client) UpdateMySchema(ctx context.Context, slug string, update SchemaU
 	return c.doMap(ctx, http.MethodPatch, "/v1/schemas/mine/"+url.PathEscape(slug), body, nil)
 }
 
-// DeleteMySchema permanently deletes one of the caller's saved schemas.
-// Bearer-token method (/v1/schemas/mine is JWT-only).
+// DeleteMySchema permanently deletes one of the caller's saved schemas. With an
+// API key only personal schemas can be deleted.
 func (c *Client) DeleteMySchema(ctx context.Context, slug string) error {
-	if err := c.requireBearer("DeleteMySchema"); err != nil {
-		return err
-	}
 	_, err := c.request(ctx, http.MethodDelete, "/v1/schemas/mine/"+url.PathEscape(slug), nil, nil, nil)
 	return err
 }
@@ -616,7 +574,7 @@ type RecommendParams struct {
 }
 
 // RecommendTemplates finds existing templates that match content / a draft
-// schema. Returns an event_id usable with AugmentSchema.
+// schema.
 func (c *Client) RecommendTemplates(ctx context.Context, params RecommendParams) (map[string]any, error) {
 	k := params.K
 	if k == 0 {
@@ -632,12 +590,35 @@ func (c *Client) RecommendTemplates(ctx context.Context, params RecommendParams)
 	return c.doMap(ctx, http.MethodPost, "/v1/schemas/recommend", body, nil)
 }
 
-// AugmentSchema refines a schema from a prior infer/recommend call using
-// natural-language guidance. eventID comes from InferSchema / RecommendTemplates.
-func (c *Client) AugmentSchema(ctx context.Context, eventID, guidance string) (map[string]any, error) {
-	body := map[string]any{"decision": "augment", "augment_guidance": guidance}
-	path := "/v1/schemas/recommendations/" + url.PathEscape(eventID) + "/feedback"
-	return c.doMap(ctx, http.MethodPost, path, body, nil)
+// AugmentParams carries the optional inputs to AugmentSchema.
+type AugmentParams struct {
+	// ContentType is "html", "markdown", "text" or "json". Detected from the
+	// content when empty.
+	ContentType string
+}
+
+// AugmentSchema refines an inferred schema with natural-language guidance
+// (POST /v1/schemas/recommendations/{event_id}/augment).
+//
+// eventID comes from InferSchema, or from an earlier AugmentSchema to keep
+// refining. guidance is 3-2000 characters, e.g. "rename event_id to id and add
+// a customer_country field". content must be the same content sent to that
+// InferSchema call; the server compares hashes and rejects a mismatch with a
+// 400 (errors.Is(err, ErrValidation)).
+//
+// It returns the refined schema in the InferSchema shape (no recommendations)
+// with a new EventID. Billed like InferSchema, so a 5xx is not retried.
+func (c *Client) AugmentSchema(ctx context.Context, eventID, guidance, content string, params AugmentParams) (*InferenceResult, error) {
+	body := map[string]any{"guidance": guidance, "content": content}
+	if params.ContentType != "" {
+		body["content_type"] = params.ContentType
+	}
+	path := "/v1/schemas/recommendations/" + url.PathEscape(eventID) + "/augment"
+	var out InferenceResult
+	if err := c.doJSON(ctx, http.MethodPost, path, body, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // ── Public API: community ────────────────────────────────────
@@ -944,9 +925,8 @@ func (c *Client) buildURL(path string, query url.Values) string {
 
 func (c *Client) applyHeaders(req *http.Request, hasBody bool, extra map[string]string) {
 	req.Header.Set("X-API-Key", c.apiKey)
-	// Bearer (JWT) credential — used by the JWT-only methods. When both
-	// credentials are set we send both headers and let the backend pick the
-	// right one per endpoint.
+	// Optional bearer (JWT) credential, sent alongside the API key when set. A
+	// route that accepts both uses X-API-Key.
 	if c.bearerToken != "" {
 		req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 	}

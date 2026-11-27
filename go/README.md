@@ -82,21 +82,11 @@ Pin a specific version with `family_slug@version`, e.g. `"logs.stripe.event@1.0.
 
 ## Authentication
 
-The SDK supports two credentials, and different methods need different ones:
+Every method authenticates with your API key (`X-API-Key`), set with `NewClient("sx_...")` or `STRUCTX_API_KEY`. That includes `Usage` and the personal-schema methods (`ListMySchemas`, `GetMySchema`, `SaveMySchema`, `UpdateMySchema`, `DeleteMySchema`).
 
-| Credential | How to set | Methods that use it |
-|---|---|---|
-| **API key** (`X-API-Key`) | `NewClient("sx_...")` or `STRUCTX_API_KEY` | `Extract`, `BatchExtract`, `InferSchema`, `ListTemplates`, `RecommendTemplates`, `Synthesize`, canonical projection, catalog/template getters — the whole dual-auth surface. |
-| **Bearer token** (JWT, `Authorization: Bearer`) | `WithBearerToken("ey...")` or `STRUCTX_BEARER_TOKEN` | `Usage` and the personal-schema CRUD (`ListMySchemas`, `GetMySchema`, `SaveMySchema`, `UpdateMySchema`, `DeleteMySchema`). These backend routes accept a dashboard JWT only — an API key is rejected with 401. |
+With an API key, the personal-schema methods write personal schemas only. Binding a schema to an organization or sharing it is done in the dashboard; the API answers a 403 (`errors.Is(err, structx.ErrPermissionDenied)`, code `api_key_personal_schemas_only`) to an org write made with an API key.
 
-An API key is always required. Add the bearer token when you also need the JWT-only methods:
-
-```go
-client, _ := structx.NewClient("sx_...", structx.WithBearerToken("ey...")) // or STRUCTX_BEARER_TOKEN
-usage, err := client.Usage(ctx) // sends Authorization: Bearer
-```
-
-Calling a JWT-only method with no bearer token returns a clear error (matching `errors.Is(err, structx.ErrStructX)`) before any request — no 401 round-trip. When both credentials are set, the SDK sends both headers and the backend picks the right one per endpoint.
+A JWT bearer token (`WithBearerToken("ey...")` or `STRUCTX_BEARER_TOKEN`) is optional. When set, the SDK sends it as `Authorization: Bearer` next to the API key; a route that accepts both uses the API key.
 
 ## Configuration
 
@@ -104,7 +94,7 @@ Calling a JWT-only method with no bearer token returns a clear error (matching `
 
 ```go
 client, err := structx.NewClient("sx_...",
-	structx.WithBearerToken("ey..."),               // or STRUCTX_BEARER_TOKEN; for Usage + schema CRUD
+	structx.WithBearerToken("ey..."),               // optional; or STRUCTX_BEARER_TOKEN
 	structx.WithBaseURL("https://api.struct-x.ai"), // or STRUCTX_BASE_URL
 	structx.WithTimeout(30*time.Second),           // per-request, via context
 	structx.WithMaxRetries(3),                      // retries after the first attempt
@@ -116,7 +106,7 @@ client, err := structx.NewClient("sx_...",
 
 | Option | Default | Notes |
 |---|---|---|
-| `WithBearerToken` | `STRUCTX_BEARER_TOKEN` env | Optional. JWT for the bearer-only methods (`Usage`, `/v1/schemas/mine` CRUD). |
+| `WithBearerToken` | `STRUCTX_BEARER_TOKEN` env | Optional. Sent as `Authorization: Bearer` when set; no method requires it. |
 | `WithBaseURL` | `STRUCTX_BASE_URL` env, else `https://api.struct-x.ai` | Override for staging / self-hosted. |
 | `WithTimeout` | `30s` | Applied per request via `context.WithTimeout`. `0` disables it. |
 | `WithMaxRetries` | `2` (3 total attempts) | Retries after the initial attempt. |
@@ -133,16 +123,36 @@ client, err := structx.NewClient("sx_...",
 | `InferSchema` | `POST /v1/schemas/infer` |
 | `ListTemplates` | `GET /v1/schemas` |
 | `ListModels` | `GET /v1/models` (operator-only) |
-| `Usage` | `GET /billing/usage` (bearer-only) |
+| `Usage` | `GET /billing/usage` |
 | `ListCategories` / `GetTemplate` | `GET /v1/templates/categories`, `GET /v1/templates/{slug}` |
 | `ListMySchemas` / `GetMySchema` / `SaveMySchema` / `UpdateMySchema` / `DeleteMySchema` | `…/v1/schemas/mine…` CRUD |
-| `RecommendTemplates` / `AugmentSchema` | `POST /v1/schemas/recommend`, `POST /v1/schemas/recommendations/{id}/feedback` |
+| `RecommendTemplates` / `AugmentSchema` | `POST /v1/schemas/recommend`, `POST /v1/schemas/recommendations/{event_id}/augment` |
 | `RequestWithdrawal` | `POST /v1/templates/{slug}/withdraw` |
 | `Synthesize` / `ListSynthDatasets` / `GetSynthDataset` / `ExportSynthDataset` / `DeleteSynthDataset` | `…/v1/synth…` |
 | `ListCanonicalFrameworks` / `ProjectCanonical` / `GetTemplateCanonical` | `…/v1/canonical…`, `GET /v1/templates/{slug}/canonical` |
 | `GetTemplateCostEstimate` / `ListTemplateVersions` | `GET /v1/templates/{slug}/cost-estimate`, `…/versions` |
 
 This matches the Python (`structx-sdk`) and Node (`@struct-x/sdk`) SDKs at their 0.4.0 line. Every method takes `context.Context` first.
+
+## Infer a schema, then refine it
+
+Pass `AugmentSchema` the `EventID` from `InferSchema` and the same content you sent it; the server checks the content against that call and returns a 400 (`ErrValidation`) if it differs.
+
+```go
+draft, err := client.InferSchema(ctx, structx.InferSchemaRequest{Content: page})
+if err != nil {
+	log.Fatal(err)
+}
+refined, err := client.AugmentSchema(ctx, draft.EventID,
+	"rename event_id to id and add a customer_country field",
+	page,                                          // the same content passed to InferSchema
+	structx.AugmentParams{ContentType: "html"})    // optional; detected when empty
+if err != nil {
+	log.Fatal(err)
+}
+fmt.Println(string(refined.Inferred.JSONSchema)) // *InferenceResult, like InferSchema
+// refined.EventID can be refined again with the same content
+```
 
 ## Batch extraction
 
@@ -221,7 +231,7 @@ ErrStructX
 
 Read calls (`ListTemplates`, `ListModels`, `Usage`, the catalog / synth / canonical getters) auto-retry transient 5xx and transport errors with exponential backoff (capped at 30s, honoring `Retry-After`).
 
-Write calls (`Extract`, `BatchExtract`, `InferSchema`, `Synthesize`) retry **only** on transport errors, never on a 5xx — a 5xx after a partial backend run may already have billed the call. `429` is never auto-retried; it surfaces as `ErrRateLimit` so your application can decide how to back off.
+Write calls (`Extract`, `BatchExtract`, `InferSchema`, `AugmentSchema`, `Synthesize`) retry **only** on transport errors, never on a 5xx — a 5xx after a partial backend run may already have billed the call. `429` is never auto-retried; it surfaces as `ErrRateLimit` so your application can decide how to back off.
 
 ## Forward compatibility
 
