@@ -1,0 +1,135 @@
+name: sdk-node-publish
+
+# Builds + publishes the Node SDK to npm on a sdk-node-v* tag push.
+# Mirrors the Python workflow's pattern (sdk-python-publish.yml) but
+# uses an NPM_TOKEN repo secret since npm's Trusted Publishing (OIDC)
+# requires per-package setup the publisher might not have done yet.
+# `npm publish --provenance` attaches an OIDC-signed provenance
+# attestation regardless, so consumers can verify the build came from
+# this exact workflow at the linked commit even when token-auth.
+#
+# To cut a release:
+#   1. Bump version in node/package.json AND node/src/version.ts
+#      (must match — the test suite asserts the User-Agent string)
+#   2. Update node/CHANGELOG.md
+#   3. From the repo root:
+#        git tag sdk-node-v0.2.0 -m "Release Node SDK 0.2.0"
+#        git push origin sdk-node-v0.2.0
+#
+# The workflow also supports manual dispatch with a dry_run input for
+# build-only verification without publishing.
+#
+# REQUIRED REPO SECRET:
+#   NPM_TOKEN — npm Automation token scoped to the @struct-x scope.
+#               Create at https://www.npmjs.com/settings/<user>/tokens
+#               with type "Automation" and access "Publish". Add to
+#               this repo's Settings → Secrets and variables → Actions.
+#
+# OPTIONAL: switch to npm's Trusted Publishing once the package has
+# been published at least once and the npm UI allows configuring a
+# "pending trusted publisher". At that point this workflow can be
+# pared down to remove NPM_TOKEN — provenance with no secret needed.
+
+on:
+  push:
+    tags:
+      - "sdk-node-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only, do not publish"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 20.x is the latest LTS we support per node/package.json's
+          # engines.node = ">=18". Newer is fine; using LTS keeps builds
+          # reproducible across this CI run and developer machines.
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci` enforces a clean install against the lockfile —
+        # catches drift between package.json and package-lock.json that
+        # `npm install` would silently accept.
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build (ESM + CJS + .d.ts)
+        run: npm run build
+
+      - name: Verify package contents
+        # `npm pack --dry-run` enumerates exactly what would be uploaded
+        # — surfaces missing files (LICENSE, README) and unintended
+        # includes (.env, node_modules) before they reach npm.
+        run: npm pack --dry-run
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: structx-sdk-node-dist
+          path: node/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish on real tag pushes, not manual dry runs.
+    if: startsWith(github.ref, 'refs/tags/sdk-node-v')
+    timeout-minutes: 5
+    defaults:
+      run:
+        working-directory: node
+    permissions:
+      # `id-token: write` lets npm publish attach an OIDC provenance
+      # attestation. Required by --provenance even with token auth.
+      id-token: write
+      contents: read
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/@struct-x/sdk
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - name: Install + build
+        # Rebuilding here (rather than downloading the build artifact)
+        # avoids any path-mangling that artifact upload + download can
+        # introduce in the dist/ tree. ~30s extra; worth the determinism.
+        run: |
+          npm ci
+          npm run build
+
+      - name: Publish to npm
+        # --access public makes the scoped @struct-x/sdk package
+        # publicly installable (default for scoped packages is restricted).
+        # --provenance attaches an OIDC provenance attestation so
+        # downstream consumers can verify provenance via npm audit
+        # signatures.
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

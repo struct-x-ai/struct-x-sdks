@@ -1,0 +1,20 @@
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editor
+.vscode/
+.idea/

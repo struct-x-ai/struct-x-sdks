@@ -1,0 +1,78 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "structx-mcp"
+version = "0.4.0"
+description = "Model Context Protocol server for struct-x — install in Claude Desktop, Cursor, Windsurf, or any MCP-compatible client to give your agent structured-extraction superpowers."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "struct-x", email = "support@struct-x.ai" },
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "structured-extraction",
+    "llm",
+    "agent",
+    "claude",
+    "cursor",
+    "structx",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    # 0.5.0 ships extract_file(), which structx_extract_document calls.
+    "structx-sdk>=0.5.0,<1.0.0",
+    # `mcp<1.10` is incompatible with `pydantic>=2.10` (the upstream
+    # `mcp.server` types use `HttpUrl` annotations whose `host_required`
+    # constraint fails to apply to `function-wrap` schemas on the newer
+    # pydantic). Floor at 1.10.
+    "mcp>=1.10.0,<2.0.0",
+    "httpx>=0.27,<0.29",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+]
+
+[project.scripts]
+# `structx-mcp` becomes a CLI command on install. Claude Desktop /
+# Cursor / Windsurf can reference it directly in their MCP config:
+#   { "mcpServers": { "structx": { "command": "structx-mcp", ... } } }
+structx-mcp = "structx_mcp.__main__:main"
+
+[project.urls]
+Homepage = "https://struct-x.ai"
+Documentation = "https://docs.struct-x.ai/mcp"
+Repository = "https://github.com/struct-x-ai/struct-x-sdks"
+Issues = "https://github.com/struct-x-ai/struct-x-sdks/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/structx_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/structx_mcp",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

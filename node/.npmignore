@@ -1,0 +1,25 @@
+## npm tarball gitignore — keep the published package tight + auditable.
+##
+## We INCLUDE src/ in the tarball (in addition to the built dist/) so
+## customers' security teams can review the actual source they're
+## installing without cloning the GitHub repo. Tiny extra cost; large
+## audit-readiness payoff.
+
+# Test files — not useful to consumers.
+tests/
+**/*.test.ts
+
+# TS config + build config — only useful to contributors.
+tsconfig.json
+tsup.config.ts
+
+# Generated noise.
+node_modules/
+*.tsbuildinfo
+.vitest_cache/
+coverage/
+
+# IDE / OS junk.
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,80 @@
+name: structx-mcp-publish
+
+# Publishes structx-mcp to PyPI on a structx-mcp-v* tag push. Uses
+# PyPI Trusted Publishing (OIDC) — no token in repo secrets. See the
+# sibling sdk-python-publish.yml for setup details.
+#
+# To release:
+#   1. Bump version in mcp/src/structx_mcp/_version.py AND
+#      mcp/pyproject.toml (sync — there's no hatch dynamic-
+#      version here because the runtime imports _version directly).
+#   2. Update mcp/CHANGELOG.md.
+#   3. git tag structx-mcp-v0.1.0 -m "Release 0.1.0"
+#   4. git push origin structx-mcp-v0.1.0
+
+on:
+  push:
+    tags:
+      - "structx-mcp-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only, do not publish"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv (fast installer)
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Install build deps
+        run: uv pip install --system build twine
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Verify metadata
+        run: twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: structx-mcp-dist
+          path: mcp/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/structx-mcp-v')
+    timeout-minutes: 5
+    environment:
+      name: pypi
+      url: https://pypi.org/project/structx-mcp/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: structx-mcp-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

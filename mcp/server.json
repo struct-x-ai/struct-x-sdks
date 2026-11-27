@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.struct-x-ai/structx-mcp",
+  "title": "Struct-X",
+  "description": "Turn HTML, markdown, text, JSON or PDFs into validated, typed JSON with per-field confidence scores.",
+  "version": "0.4.0",
+  "repository": {
+    "url": "https://github.com/struct-x-ai/struct-x-sdks",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "websiteUrl": "https://struct-x.ai",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "structx-mcp",
+      "version": "0.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "STRUCTX_API_KEY",
+          "description": "Your Struct-X API key (prefixed sx_). Get one at https://app.struct-x.ai/keys.",
+          "isRequired": true,
+          "isSecret": true
+        },
+        {
+          "name": "STRUCTX_BASE_URL",
+          "description": "Override the API endpoint. Defaults to https://api.struct-x.ai. Only set when pointing at a self-hosted or dev backend.",
+          "isRequired": false,
+          "isSecret": false,
+          "default": "https://api.struct-x.ai"
+        }
+      ]
+    }
+  ]
+}

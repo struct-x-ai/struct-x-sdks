@@ -1,0 +1,89 @@
+# Smithery manifest for structx-mcp.
+#
+# Smithery's published format has evolved since this stub was written
+# (they moved from a YAML-only intake to a CLI-based + MCPB-bundle
+# flow). Treat this file as a STARTING POINT: verify against the
+# current docs at https://smithery.ai/docs/build/publish before
+# submitting, and update the keys / commandFunction shape if they've
+# changed. The intent below — stdio transport, an API-key
+# configSchema field, and an optional API-URL override — is what
+# Smithery needs regardless of exact key names.
+#
+# Submission via the Smithery web UI (sign in with GitHub, point at
+# this repo and the `mcp/` subPath) is the recommended
+# path; the YAML file makes the listing auto-fill the install
+# instructions and configuration prompts.
+
+startCommand:
+  type: stdio
+
+  # User-facing config the install prompt asks about. Smithery
+  # generates a config form from this JSON Schema and passes the
+  # filled values into commandFunction below.
+  configSchema:
+    type: object
+    required:
+      - structxApiKey
+    properties:
+      structxApiKey:
+        type: string
+        title: "Struct-X API key"
+        description: |-
+          Your Struct-X API key (prefixed `sx_`). Get one at
+          https://app.struct-x.ai/keys. The MCP server uses it on every
+          tool call; the agent's permissions match whatever tier and
+          quota this key has.
+      structxBaseUrl:
+        type: string
+        title: "Struct-X API URL (optional)"
+        description: |-
+          Override the API endpoint. Defaults to https://api.struct-x.ai
+          (production). Only set this when pointing at a self-hosted or
+          dev backend.
+        default: "https://api.struct-x.ai"
+
+  # How Smithery should launch the server with the user's config. The
+  # `structx-mcp` console script comes from the PyPI package; Smithery
+  # installs the package itself in a sandboxed env before invoking.
+  commandFunction: |-
+    (config) => ({
+      command: "structx-mcp",
+      args: [],
+      env: {
+        STRUCTX_API_KEY: config.structxApiKey,
+        ...(config.structxBaseUrl && config.structxBaseUrl !== "https://api.struct-x.ai"
+          ? { STRUCTX_BASE_URL: config.structxBaseUrl }
+          : {}),
+      },
+    })
+
+# Optional metadata Smithery surfaces in the listing page. Most of
+# this is duplicated from pyproject.toml on purpose — Smithery
+# doesn't auto-pull from PyPI metadata.
+metadata:
+  name: structx-mcp
+  displayName: Struct-X
+  description: |-
+    Structured extraction MCP server. Turn raw HTML, markdown, text,
+    JSON or PDFs into validated typed JSON using JSON schemas — with
+    per-field confidence scores. 26 tools cover extraction (incl.
+    batch and PDF documents), catalog browsing + cost/version
+    introspection, personal-schema management, schema inference +
+    augmentation, canonical-framework projection, synthetic-dataset
+    lifecycle, and community publication.
+  homepage: https://struct-x.ai
+  repository: https://github.com/struct-x-ai/struct-x-sdks
+  documentation: https://github.com/struct-x-ai/struct-x-sdks/blob/main/mcp/README.md
+  license: MIT
+  categories:
+    - data
+    - productivity
+    - developer-tools
+  keywords:
+    - structured-extraction
+    - json-schema
+    - llm
+    - agents
+    - claude
+    - cursor
+    - windsurf

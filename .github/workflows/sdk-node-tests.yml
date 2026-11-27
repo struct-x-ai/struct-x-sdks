@@ -1,0 +1,66 @@
+name: sdk-node-tests
+
+# Runs the Node SDK's typecheck + test suite. Only fires on PRs that
+# touch the package itself OR this workflow — keeps the matrix off
+# every PR.
+#
+# Two-version matrix: Node 18 (the SDK's minimum per `engines.node`)
+# and Node 20 (current LTS at time of writing). Adding 22 once it
+# becomes LTS is a one-line bump.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "node/**"
+      - ".github/workflows/sdk-node-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "node/**"
+      - ".github/workflows/sdk-node-tests.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["18", "20"]
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            node/.eslintcache
+            node/dist
+            node/build
+            node/.tsbuildinfo
+          key: ${{ runner.os }}-node-${{ matrix.node-version }}-build-${{ github.ref }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ matrix.node-version }}-build-
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        # Verify the dual ESM/CJS bundle generates cleanly and types
+        # emit. We don't keep the artifacts — that's npm publish's job.
+        run: npm run build

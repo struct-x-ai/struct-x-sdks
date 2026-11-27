@@ -1,0 +1,55 @@
+name: structx-mcp-tests
+
+# Tests for the standalone structx-mcp PyPI package. Fires only on PRs
+# that touch the MCP package OR the underlying SDK (since the MCP
+# depends on it).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mcp/**"
+      - "python/**"
+      - ".github/workflows/structx-mcp-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "mcp/**"
+      - "python/**"
+      - ".github/workflows/structx-mcp-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv (fast installer)
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Install (SDK + MCP, both editable)
+        # structx-sdk isn't on PyPI yet when running this against the
+        # monorepo. Install the SDK from its local checkout, then the
+        # MCP package. Once the SDK is published, the MCP test job can
+        # drop the explicit SDK install — the [project] dependency
+        # picks it up from PyPI.
+        run: |
+          uv pip install --system -e ../python
+          uv pip install --system -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest -q

@@ -1,0 +1,84 @@
+name: sdk-python-publish
+
+# Builds + publishes the Python SDK to PyPI on a sdk-python-v*  tag.
+# Uses PyPI Trusted Publishing (OIDC) — no token in repo secrets. The
+# PyPI project must declare this repository + workflow as a trusted
+# publisher under "Manage" → "Publishing" → "Add a new pending publisher".
+#
+# To cut a release:
+#   1. Bump version in python/src/structx_sdk/_version.py
+#   2. Update python/CHANGELOG.md
+#   3. git tag sdk-python-v0.2.0 -m "Release 0.2.0"
+#   4. git push origin sdk-python-v0.2.0
+#
+# The workflow also supports manual dispatch for dry-run builds.
+
+on:
+  push:
+    tags:
+      - "sdk-python-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build only, do not publish"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv (fast installer)
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Install build deps
+        run: uv pip install --system build twine
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Verify metadata
+        # twine check catches malformed README/long-description issues
+        # BEFORE PyPI rejects the upload. Cheap pre-flight.
+        run: twine check dist/*
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: structx-sdk-dist
+          path: python/dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only publish on real tag pushes, not manual dry runs.
+    if: startsWith(github.ref, 'refs/tags/sdk-python-v')
+    timeout-minutes: 5
+    environment:
+      name: pypi
+      url: https://pypi.org/project/structx-sdk/
+    permissions:
+      id-token: write  # required for Trusted Publishing
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: structx-sdk-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

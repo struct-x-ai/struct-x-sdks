@@ -1,0 +1,62 @@
+{
+  "name": "@struct-x/sdk",
+  "version": "0.5.0",
+  "description": "Official Node.js / TypeScript SDK for struct-x \u2014 agent-native structured extraction.",
+  "license": "MIT",
+  "author": "struct-x <support@struct-x.ai>",
+  "homepage": "https://struct-x.ai",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/struct-x-ai/struct-x-sdks.git",
+    "directory": "node"
+  },
+  "bugs": {
+    "url": "https://github.com/struct-x-ai/struct-x-sdks/issues"
+  },
+  "keywords": [
+    "structured-extraction",
+    "llm",
+    "json-schema",
+    "extraction",
+    "ai",
+    "agent",
+    "mcp",
+    "typescript"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests --ext .ts",
+    "prepublishOnly": "npm run build && npm test && npm run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  }
+}

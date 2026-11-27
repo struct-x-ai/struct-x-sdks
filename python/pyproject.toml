@@ -1,0 +1,91 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "structx-sdk"
+dynamic = ["version"]
+description = "Official Python SDK (structx-sdk) for struct-x — agent-native structured extraction."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "struct-x", email = "support@struct-x.ai" },
+]
+keywords = [
+    "structured-extraction",
+    "llm",
+    "json-schema",
+    "extraction",
+    "ai",
+    "agent",
+    "mcp",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "httpx>=0.27,<0.29",
+    "pydantic>=2.5,<3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "mypy>=1.8",
+    "ruff>=0.5",
+]
+
+[project.urls]
+Homepage = "https://struct-x.ai"
+Documentation = "https://docs.struct-x.ai"
+Repository = "https://github.com/struct-x-ai/struct-x-sdks"
+Issues = "https://github.com/struct-x-ai/struct-x-sdks/issues"
+Changelog = "https://github.com/struct-x-ai/struct-x-sdks/blob/main/python/CHANGELOG.md"
+
+[tool.hatch.version]
+path = "src/structx_sdk/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/structx_sdk"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/structx_sdk",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["E501"]
+
+[tool.mypy]
+strict = true
+python_version = "3.10"
+files = ["src/structx_sdk"]

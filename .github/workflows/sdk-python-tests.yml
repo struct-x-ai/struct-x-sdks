@@ -1,0 +1,62 @@
+name: sdk-python-tests
+
+# Runs the Python SDK test suite. Only fires on PRs that touch the SDK
+# package itself OR this workflow — keeps the matrix off of every PR
+# the repo lands.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "python/**"
+      - ".github/workflows/sdk-python-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "python/**"
+      - ".github/workflows/sdk-python-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        # Python 3.10 is the floor (per pyproject.toml requires-python).
+        # 3.13 is the current latest. Skip 3.11/3.12 in CI to keep the
+        # matrix lean — the SDK has no version-specific code paths.
+        python-version: ["3.10", "3.13"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv (fast installer)
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.17"
+          enable-cache: true
+
+      - name: Cache build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            python/.pytest_cache
+            python/.mypy_cache
+            python/build
+            python/dist
+            python/*.egg-info
+          key: ${{ runner.os }}-python-${{ matrix.python-version }}-build-${{ github.ref }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ matrix.python-version }}-build-
+
+      - name: Install (editable + dev extras)
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest -q
