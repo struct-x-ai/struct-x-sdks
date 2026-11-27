@@ -1,12 +1,25 @@
 name: sdk-node-publish
 
 # Builds + publishes the Node SDK to npm on a sdk-node-v* tag push.
-# Mirrors the Python workflow's pattern (sdk-python-publish.yml) but
-# uses an NPM_TOKEN repo secret since npm's Trusted Publishing (OIDC)
-# requires per-package setup the publisher might not have done yet.
-# `npm publish --provenance` attaches an OIDC-signed provenance
-# attestation regardless, so consumers can verify the build came from
-# this exact workflow at the linked commit even when token-auth.
+#
+# AUTH — two modes, same workflow, no edit needed to switch:
+#   1. Trusted publishing (OIDC, the target). Configure it on npmjs.com:
+#      @struct-x/sdk → Settings → Trusted Publisher → GitHub Actions:
+#      org struct-x-ai, repo struct-x-sdks, workflow sdk-node-publish.yml,
+#      environment npm, allowed action "npm publish" (dist-tag not needed).
+#      npm 11.5.1+ then authenticates through the job's OIDC token and no
+#      secret is used. Trusted publishing needs the package to exist, so it
+#      can only be set up after the first publish.
+#   2. NPM_TOKEN fallback (first publish only). A granular access token
+#      (Read and write, scoped to @struct-x, bypass 2FA, short expiry) in
+#      the `npm` environment's secrets. npm uses it only when no trusted
+#      publisher is configured. Delete it once trusted publishing works:
+#      npm removes direct publishing with granular tokens in January 2027.
+#
+# Node 24 ships npm 11 (trusted publishing needs npm >= 11.5.1); the
+# "Check npm version" steps fail fast if a runner ever resolves older.
+# --provenance attaches a signed provenance attestation (this repo is
+# public, which npm requires for provenance).
 #
 # To cut a release:
 #   1. Bump version in node/package.json AND node/src/version.ts
@@ -19,16 +32,6 @@ name: sdk-node-publish
 # The workflow also supports manual dispatch with a dry_run input for
 # build-only verification without publishing.
 #
-# REQUIRED REPO SECRET:
-#   NPM_TOKEN — npm Automation token scoped to the @struct-x scope.
-#               Create at https://www.npmjs.com/settings/<user>/tokens
-#               with type "Automation" and access "Publish". Add to
-#               this repo's Settings → Secrets and variables → Actions.
-#
-# OPTIONAL: switch to npm's Trusted Publishing once the package has
-# been published at least once and the npm UI allows configuring a
-# "pending trusted publisher". At that point this workflow can be
-# pared down to remove NPM_TOKEN — provenance with no secret needed.
 
 on:
   push:
@@ -54,13 +57,18 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # 20.x is the latest LTS we support per node/package.json's
-          # engines.node = ">=18". Newer is fine; using LTS keeps builds
-          # reproducible across this CI run and developer machines.
-          node-version: "20"
+          # Node 24 LTS (bundles npm 11). The package still supports
+          # engines.node ">=18"; sdk-node-tests.yml covers older Nodes.
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
           cache-dependency-path: node/package-lock.json
+
+      - name: Check npm version
+        # Trusted publishing (OIDC) needs npm >= 11.5.1.
+        run: |
+          npm --version
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); if (a<11||(a===11&&(b<5||(b===5&&c<1)))) { console.error("npm "+process.argv[1]+" < 11.5.1: trusted publishing needs a newer npm"); process.exit(1) }' "$(npm --version)"
 
       - name: Install dependencies
         # `npm ci` enforces a clean install against the lockfile —
@@ -99,8 +107,8 @@ jobs:
       run:
         working-directory: node
     permissions:
-      # `id-token: write` lets npm publish attach an OIDC provenance
-      # attestation. Required by --provenance even with token auth.
+      # `id-token: write` lets npm authenticate via trusted publishing
+      # (OIDC) and sign the provenance attestation. Needed in both modes.
       id-token: write
       contents: read
     environment:
@@ -111,10 +119,16 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
           cache: npm
           cache-dependency-path: node/package-lock.json
+
+      - name: Check npm version
+        # Trusted publishing (OIDC) needs npm >= 11.5.1.
+        run: |
+          npm --version
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(Number); if (a<11||(a===11&&(b<5||(b===5&&c<1)))) { console.error("npm "+process.argv[1]+" < 11.5.1: trusted publishing needs a newer npm"); process.exit(1) }' "$(npm --version)"
 
       - name: Install + build
         # Rebuilding here (rather than downloading the build artifact)
@@ -127,9 +141,10 @@ jobs:
       - name: Publish to npm
         # --access public makes the scoped @struct-x/sdk package
         # publicly installable (default for scoped packages is restricted).
-        # --provenance attaches an OIDC provenance attestation so
-        # downstream consumers can verify provenance via npm audit
-        # signatures.
+        # --provenance attaches a signed provenance attestation that
+        # consumers can check with `npm audit signatures`.
+        # Auth: trusted publishing (OIDC) when configured on npmjs.com;
+        # otherwise the NPM_TOKEN fallback below (empty once deleted).
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

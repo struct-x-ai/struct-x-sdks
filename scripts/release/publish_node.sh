@@ -18,7 +18,7 @@
 #   --push | --yes  actually create+push the tag / actually publish (else safe)
 #
 # Env:
-#   NPM_TOKEN   npm Automation token with Publish access, scoped to @struct-x
+#   NPM_TOKEN   npm granular access token (Read and write, scoped to @struct-x)
 #               (create at https://www.npmjs.com/settings/<user>/tokens)
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
@@ -59,7 +59,7 @@ warn "Manual local publish to npm (no provenance — that is CI-only). Canonical
 # Fail LOUDLY up-front (before the slow npm ci/build) if the token is missing
 # on a real publish.
 if [ "$DRY_RUN" != "1" ]; then
-  require_env NPM_TOKEN "Export it first, e.g.  export NPM_TOKEN=npm_XXXX  (Automation token, Publish access, scoped to @struct-x)"
+  require_env NPM_TOKEN "Export it first, e.g.  export NPM_TOKEN=npm_XXXX  (granular access token, Read and write, scoped to @struct-x)"
 fi
 
 cd "${REPO_ROOT}/node"

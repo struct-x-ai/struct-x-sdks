@@ -55,7 +55,7 @@ Do these once; then every release is just the per-release flow.
 |---|---|---|
 | PyPI **Trusted Publisher** for `structx-sdk` | pypi.org → project → Settings → Publishing → add pending publisher for this repo + `sdk-python-publish.yml` | CI path (no token) |
 | PyPI **Trusted Publisher** for `structx-mcp` | same, workflow `structx-mcp-publish.yml` | CI path (no token) |
-| npm org **`@struct-x`** + `NPM_TOKEN` **repo secret** | create an Automation token (Publish access, scoped to `@struct-x`) → repo Settings → Secrets → Actions → `NPM_TOKEN` | CI path (Node) |
+| npm org **`@struct-x`**, then **trusted publishing** | First publish: a granular access token (Read and write, scoped to `@struct-x`, bypass 2FA, ~7-day expiry) as the `NPM_TOKEN` secret in the `npm` environment. After that: npmjs.com → `@struct-x/sdk` → Settings → Trusted Publisher → GitHub Actions (`struct-x-ai` / `struct-x-sdks` / `sdk-node-publish.yml` / env `npm`, allow `npm publish`), then delete the token. npm ends direct publishing with granular tokens in January 2027 | CI path (Node) |
 | npm you're an **owner/maintainer** of `@struct-x/sdk` | npmjs.com | first Node publish |
 | **pkg.go.dev** | nothing — automatic on tag push | Go |
 | MCP registries: **GitHub org-owner identity** | you already own `struct-x-ai` | `mcp-publisher` + Smithery |
