@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "struct-x",
+  "displayName": "Struct-X",
+  "version": "1.0.0",
+  "description": "Turn HTML, markdown, text, JSON or PDFs into validated, typed JSON with per-field confidence scores, using a JSON Schema you supply or a template from the Struct-X catalog.",
+  "author": {
+    "name": "Struct-X",
+    "email": "support@struct-x.ai",
+    "url": "https://struct-x.ai"
+  },
+  "homepage": "https://struct-x.ai/docs",
+  "repository": "https://github.com/struct-x-ai/struct-x-sdks",
+  "license": "MIT",
+  "keywords": [
+    "structured-extraction",
+    "json-schema",
+    "data-extraction",
+    "pdf",
+    "web-scraping",
+    "etl"
+  ],
+  "icon": "./icon.png",
+  "documentationUrl": "https://struct-x.ai/docs",
+  "supportUrl": "https://struct-x.ai/support",
+  "privacyPolicyUrl": "https://struct-x.ai/privacy",
+  "termsOfServiceUrl": "https://struct-x.ai/terms",
+  "network": {
+    "hosts": ["api.struct-x.ai", "pypi.org", "files.pythonhosted.org"]
+  },
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "Struct-X API key",
+      "description": "Your Struct-X API key (starts with sx_). Create one at https://app.struct-x.ai/keys.",
+      "required": true,
+      "sensitive": true
+    }
+  },
+  "mcpServers": {
+    "structx": {
+      "command": "uvx",
+      "args": ["structx-mcp==0.4.0"],
+      "env": {
+        "STRUCTX_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}
