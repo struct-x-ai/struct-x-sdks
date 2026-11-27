@@ -766,8 +766,9 @@ TEMPLATE_COST_ESTIMATE_TOOL = Tool(
     description=(
         "Estimate the field count, token usage, and credit cost of extracting with "
         "a catalog template at a given tier — WITHOUT running the model (values are "
-        "derived from the template's field catalog + token heuristics). Returns a "
-        "per-tier breakdown too, so the agent can compare tiers before committing. "
+        "derived from the template's field catalog + token heuristics). Every "
+        "response also includes a `per_tier` breakdown for all four tiers, so ONE "
+        "call is enough to compare tiers before committing. "
         "Use to decide which tier to extract at, or to preview cost. Slug comes "
         "from structx_list_templates."
     ),
@@ -784,7 +785,12 @@ TEMPLATE_COST_ESTIMATE_TOOL = Tool(
                 "type": "string",
                 "enum": ["required", "recommended", "optional", "extended"],
                 "default": "required",
-                "description": "Tier to estimate for. `per_tier` covers all tiers.",
+                "description": (
+                    "Tier to estimate for: required, recommended, optional or extended "
+                    "(default required). To compare tiers, call once with any tier and "
+                    "read the response's `per_tier` breakdown; `per_tier` is a response "
+                    "field, not a tier value."
+                ),
             },
         },
         "required": ["slug"],

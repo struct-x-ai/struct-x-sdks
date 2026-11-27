@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `structx_template_cost_estimate`: the `tier` description no longer reads as if `per_tier` were a tier value (agents sent `tier: "per_tier"` and got an input-validation error). It now says to call once with any tier and read the response's `per_tier` breakdown.
+
 ## [0.4.0] — 2026-11-26
 
 Adds PDF extraction for agents. Requires `structx-sdk` 0.5.0, so publish the SDK first.
