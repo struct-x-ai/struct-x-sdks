@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "struct-x",
   "displayName": "Struct-X",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Turn HTML, markdown, text, JSON or PDFs into validated, typed JSON with per-field confidence scores, using a JSON Schema you supply or a template from the Struct-X catalog.",
   "author": {
     "name": "Struct-X",
@@ -40,7 +40,7 @@
   "mcpServers": {
     "structx": {
       "command": "uvx",
-      "args": ["structx-mcp==0.4.0"],
+      "args": ["structx-mcp==0.5.0"],
       "env": {
         "STRUCTX_API_KEY": "${user_config.api_key}"
       }

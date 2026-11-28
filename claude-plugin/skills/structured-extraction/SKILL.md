@@ -12,8 +12,8 @@ Use the `structx_*` tools to turn content into JSON that matches a schema. Every
 Reuse before you write.
 
 1. If the content is a common format (a webhook payload, a log line, a product page, an article, an invoice), call `structx_recommend_templates` with a short sample of the content. If a result fits, use its slug as `template_slug`.
-2. If the user names a vendor or format, `structx_list_templates` and `structx_get_template` show what the catalog has.
-3. Only when nothing fits, call `structx_infer_schema` on one representative sample (at least 200 characters). It costs more than an extraction, so run it once, not per item. Show the user the drafted fields before extracting at scale, and refine with `structx_augment_schema` (pass the `event_id` from the infer call) when they want changes.
+2. If the user names a vendor or format, search the catalog with `structx_list_templates` (`q` takes tag words such as `stripe payments`; results come one page at a time, so follow `next_offset` for more) and read a match with `structx_get_template`.
+3. Only when nothing fits, call `structx_infer_schema` on one representative sample (at least 200 characters). It costs more than an extraction, so run it once, not per item. Show the user the drafted fields before extracting at scale, and refine with `structx_augment_schema` when they want changes: pass the `event_id` from the infer call and the same sample as `content` (the API rejects different content).
 
 When you write or edit a schema yourself:
 
@@ -51,5 +51,5 @@ To map an extracted record onto a standard framework, call `structx_canonical_fr
 
 ## 6. Account changes need the user's go-ahead
 
-- Save a schema with `structx_save_my_schema` only when the user asks to keep it. Set `publishable_consent` to `true` only when the user explicitly wants it offered to the public community catalog.
+- Save a schema with `structx_save_my_schema` only when the user asks to keep it. These tools change only the user's personal schemas; sharing a schema with an organization or offering it to the public community catalog is done in the Struct-X dashboard.
 - Before calling `structx_delete_my_schema`, `structx_delete_dataset` or `structx_request_withdrawal`, confirm with the user. These remove data from their account.

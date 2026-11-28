@@ -43,11 +43,11 @@ The rest manage saved schemas and synthetic datasets on your account. The full l
 
 ## What this plugin runs, sends and stores
 
-- **Runs:** `uvx structx-mcp==0.4.0`. On first use, `uvx` downloads `structx-mcp` and its dependencies (`structx-sdk`, `mcp`, `httpx`) from PyPI and runs the server on your machine.
+- **Runs:** `uvx structx-mcp==0.5.0`. On first use, `uvx` downloads `structx-mcp` and its dependencies (`structx-sdk`, `mcp`, `httpx`) from PyPI and runs the server on your machine.
 - **Sends:** the content, schemas and options Claude passes to a tool, together with your API key, to the Struct-X API at `https://api.struct-x.ai` over HTTPS. Nothing is sent anywhere else.
 - **Fetches:** `structx_extract_from_url` downloads the page you name from your machine before sending its text to the API. It accepts public HTTPS URLs only, refuses private and link-local addresses, follows no redirects and stops at 10 MB.
 - **Reads local files:** `structx_extract_document` reads a PDF from your disk only when you give it a `file_path`, and uploads that file to the API.
-- **Stores:** saving a schema or a synthetic dataset stores it on your Struct-X account. A saved schema is offered for the public community catalog only if you explicitly opt in, and an admin reviews it before publication. The delete tools permanently remove saved schemas and datasets.
+- **Stores:** saving a schema or a synthetic dataset stores it on your Struct-X account. With an API key, the plugin saves, changes and deletes only your personal schemas: binding a schema to an organization, sharing it, or offering it to the public community catalog is done in the Struct-X dashboard. The delete tools permanently remove saved schemas and datasets.
 - **Bills:** extraction, schema inference and dataset tools use credits from your Struct-X plan.
 
 How the Struct-X API handles your data is described in the [privacy policy](https://struct-x.ai/privacy) and [terms of service](https://struct-x.ai/terms).
