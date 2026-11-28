@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-28
+
+API-key release: `usage()` and the personal-schema methods work with an API key, `augment_schema()` refines schemas (breaking: new required `content`), and `browse_templates()` pages the template catalog.
+
 ### Added
 
 - **`browse_templates(*, q=None, category=None, vendor=None, tag=None, first_party=None, limit=25, offset=0)`** (sync and async): one page of the template catalog from `GET /v1/templates`, as a new `TemplatePage` (`items`, `total`, `limit`, `offset`, and a `next_offset` property that is None on the last page). Items are the new `TemplateSummary` model and carry no JSON Schema; `get_template(slug)` returns one. This is now the preferred way to list templates. `list_templates()` is unchanged and still returns the whole gallery from `GET /v1/schemas` (several MB, every schema included).

@@ -1,6 +1,6 @@
 {
   "name": "@struct-x/sdk",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Official Node.js / TypeScript SDK for struct-x \u2014 agent-native structured extraction.",
   "license": "MIT",
   "author": "struct-x <support@struct-x.ai>",
