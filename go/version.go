@@ -5,7 +5,7 @@ package structx
 // debugging without leaking customer identity.
 //
 // Its API surface matches the Python (structx-sdk) and Node
-// (@struct-x/sdk) SDKs at their 0.5.x line — the full extract / document /
+// (@struct-x/sdk) SDKs at their 0.6.x line — the full extract / document /
 // infer / template / personal-schema / synth / canonical surface — on its own
 // v0.x line (which began at 0.1.0, same as how both sibling SDKs began).
 //
@@ -16,4 +16,8 @@ package structx
 // 0.2.0 aligns with the sibling SDKs' 0.5.0 release: ExtractFile reads PDFs
 // through POST /v1/extract/document, and the default base URL is
 // https://api.struct-x.ai.
-const Version = "0.2.0"
+//
+// 0.3.0 aligns with the sibling SDKs' 0.6.0 release: Usage and the
+// personal-schema methods work with an API key, AugmentSchema calls
+// /augment (new required content), and BrowseTemplates pages the catalog.
+const Version = "0.3.0"

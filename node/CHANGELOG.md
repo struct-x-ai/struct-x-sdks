@@ -4,6 +4,10 @@ All notable changes to `@struct-x/sdk` will be documented here.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-11-28
+
+API-key release: `usage()` and the personal-schema methods work with an API key, `augmentSchema()` refines schemas (breaking: new required `content`), and `browseTemplates()` pages the template catalog.
+
 ### Added
 
 - **`browseTemplates({ q?, category?, vendor?, tag?, firstParty?, limit?, offset? })`**: one page of the template catalog from `GET /v1/templates`, 25 per page by default (`limit` 1-500). Resolves to a new `TemplatePage` (`items`, `total`, `limit`, `offset`, and `next_offset`, which the SDK computes and sets to `null` on the last page). Items are the new `TemplateSummary` type and carry no JSON Schema; `getTemplate(slug)` returns one. New exported types `BrowseTemplatesOptions`, `TemplatePage`, `TemplateSummary`. This is now the preferred way to list templates. `listTemplates()` is unchanged and still returns the whole gallery from `GET /v1/schemas` (several MB, every schema included).

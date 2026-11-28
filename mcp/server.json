@@ -3,7 +3,7 @@
   "name": "io.github.struct-x-ai/structx-mcp",
   "title": "Struct-X",
   "description": "Turn HTML, markdown, text, JSON or PDFs into validated, typed JSON with per-field confidence scores.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "repository": {
     "url": "https://github.com/struct-x-ai/struct-x-sdks",
     "source": "github",
@@ -15,7 +15,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "structx-mcp",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       },

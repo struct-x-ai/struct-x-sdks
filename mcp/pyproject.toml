@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "structx-mcp"
-version = "0.4.0"
+version = "0.5.0"
 description = "Model Context Protocol server for struct-x — install in Claude Desktop, Cursor, Windsurf, or any MCP-compatible client to give your agent structured-extraction superpowers."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -31,8 +31,10 @@ classifiers = [
     "Topic :: Software Development :: Libraries",
 ]
 dependencies = [
-    # 0.5.0 ships extract_file(), which structx_extract_document calls.
-    "structx-sdk>=0.5.0,<1.0.0",
+    # 0.6.0: usage and personal schemas with an API key, augment via
+    # /augment, browse_templates (structx_list_templates paging). 0.5.0
+    # added extract_file(), which structx_extract_document calls.
+    "structx-sdk>=0.6.0,<1.0.0",
     # `mcp<1.10` is incompatible with `pydantic>=2.10` (the upstream
     # `mcp.server` types use `HttpUrl` annotations whose `host_required`
     # constraint fails to apply to `function-wrap` schemas on the newer

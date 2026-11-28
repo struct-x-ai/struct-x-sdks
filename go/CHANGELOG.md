@@ -5,6 +5,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-11-28
+
+API-key release: `Usage` and the personal-schema methods work with an API key, `AugmentSchema` refines schemas (breaking: new required `content`), and `BrowseTemplates` pages the template catalog.
+
 ### Added
 
 - **`BrowseTemplates(ctx, BrowseTemplatesParams{Q, Category, Vendor, Tag, FirstParty, Limit, Offset})`**: one page of the template catalog from `GET /v1/templates`, 25 per page by default (`DefaultTemplatePageSize`; `Limit` 1-500). Returns a new `*TemplatePage` (`Items`, `Total`, `Limit`, `Offset`) whose `NextOffset()` method gives the next page's offset, or `false` on the last page. Items are the new `TemplateSummary` type (with `FieldCounts`) and carry no JSON Schema; `GetTemplate` returns one. This is now the preferred way to list templates. `ListTemplates` is unchanged and still returns the whole gallery from `GET /v1/schemas` (several MB, every schema included).

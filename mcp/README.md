@@ -78,7 +78,7 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 | **`structx_extract`** | Extract structured JSON from raw content (HTML / markdown / text / JSON / emails) using a JSON Schema you provide OR a pre-built template slug. Returns per-field confidence scores. |
 | **`structx_extract_batch`** | Extract from up to 100 content items in one call — each with its own schema/template + tier, shared options. Per-item billing is metered server-side; surfaces `total_credits_used`. |
 | **`structx_extract_from_url`** | Fetch a URL and extract in one call. Sandboxed (HTTPS only, public DNS only, 10MB cap, no redirects). Replaces the two-call `fetch_url → extract` pattern. |
-| **`structx_extract_document`** | Extract from a PDF (text, tables or scanned pages): pass a local `file_path` or `document_base64`, plus a schema or template. Per-field confidence is reported by the model. PDF only (5-20 MB by plan); not enabled on every account yet. Uses `structx-sdk` 0.5.0+, which installs with this package. |
+| **`structx_extract_document`** | Extract from a PDF (text, tables or scanned pages): pass a local `file_path` or `document_base64`, plus a schema or template. Per-field confidence is reported by the model. PDF only (5-20 MB by plan); not enabled on every account yet. Uses `structx-sdk` 0.6.0+, which installs with this package. |
 | **`structx_infer_schema`** | Don't have a schema yet? Paste raw content, get a draft schema back with per-field rationales. Plus matching templates from the public catalog. |
 
 ### Catalog & templates
