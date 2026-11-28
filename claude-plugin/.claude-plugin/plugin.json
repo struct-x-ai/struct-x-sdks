@@ -1,8 +1,7 @@
 {
-  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "struct-x",
   "displayName": "Struct-X",
-  "version": "1.2.0",
+  "version": "2.0.0",
   "description": "Turn HTML, markdown, text, JSON or PDFs into validated, typed JSON with per-field confidence scores, using a JSON Schema you supply or a template from the Struct-X catalog.",
   "author": {
     "name": "Struct-X",
@@ -25,9 +24,6 @@
   "supportUrl": "https://struct-x.ai/support",
   "privacyPolicyUrl": "https://struct-x.ai/privacy",
   "termsOfServiceUrl": "https://struct-x.ai/terms",
-  "network": {
-    "hosts": ["api.struct-x.ai", "pypi.org", "files.pythonhosted.org"]
-  },
   "userConfig": {
     "api_key": {
       "type": "string",
@@ -39,10 +35,10 @@
   },
   "mcpServers": {
     "structx": {
-      "command": "uvx",
-      "args": ["structx-mcp==0.5.0"],
-      "env": {
-        "STRUCTX_API_KEY": "${user_config.api_key}"
+      "type": "http",
+      "url": "https://api.struct-x.ai/mcp",
+      "headers": {
+        "X-API-Key": "${user_config.api_key}"
       }
     }
   }
