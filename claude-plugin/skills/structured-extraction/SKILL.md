@@ -12,8 +12,8 @@ Use the `structx_*` tools to turn content into JSON that matches a schema. Every
 Reuse before you write.
 
 1. If the content is a common format (a webhook payload, a log line, a product page, an article, an invoice), call `structx_recommend_templates` with a short sample of the content. If a result fits, use its slug as `template_slug`.
-2. If the user names a vendor or format, search the catalog with `structx_list_templates`. Filter with `q` (tag words such as `stripe payments`) or `category` (a code such as `PAYMENTS` from `structx_list_categories`). Results come 25 per page by default, at most 50; pass `next_offset` as `offset` for the next page. Listed templates carry no schema, so read a match with `structx_get_template`.
-3. Only when nothing fits, call `structx_infer_schema` on one representative sample (at least 200 characters). It costs more than an extraction, so run it once, not per item. Show the user the drafted fields before extracting at scale, and refine with `structx_augment_schema` when they want changes: pass the `event_id` from the infer call and the same sample as `content` (the API rejects different content).
+2. If the user names a vendor or format, search the catalog with `structx_list_templates`. Filter with `q` (tag words such as `stripe payments`) or `category` (a code such as `PAYMENTS` from `structx_list_categories`). Results come 25 per page by default, at most 50; send `next_offset` as `offset` for the next page. Listed templates carry no schema, so read a match with `structx_get_template`.
+3. Only when nothing fits, call `structx_infer_schema` on one representative sample (at least 200 characters). It costs more than an extraction, so run it once, not per item. Show the user the drafted fields before extracting at scale, and refine with `structx_augment_schema` when they want changes: give it the `event_id` from the infer call and the same sample as `content` (the API rejects different content).
 
 When you write or edit a schema yourself:
 
@@ -26,7 +26,7 @@ When you write or edit a schema yourself:
 | Source | Tool |
 | --- | --- |
 | Text, HTML, markdown or JSON already in the conversation | `structx_extract` with `content` |
-| A public web page | `structx_extract_from_url` (HTTPS only; the Struct-X servers fetch it and follow no redirects, so pass the final URL). If the tool isn't listed, URL fetching isn't enabled |
+| A public web page | `structx_extract_from_url` (HTTPS only; the Struct-X servers fetch it and follow no redirects, so give it the final URL). If the tool isn't listed, URL fetching isn't enabled |
 | A PDF | `structx_extract_document` with the PDF's bytes as `document_base64` (up to about 3 MB); set `max_credits` for large files. If the tool isn't listed, document extraction isn't enabled for this account |
 | Many items with the same shape | `structx_extract_batch` (up to 100 items per call, 500 KB each) instead of looping `structx_extract` |
 
@@ -42,7 +42,7 @@ Tell the user the expected cost before a job that will use a large share of thei
 ## 4. Report results honestly
 
 - Each extraction returns per-field confidence. Call out low-confidence fields when you report results, and don't present them as certain.
-- Pass `options: {"confidence_threshold": 0.8}` (or the user's threshold) to have weak fields flagged, and `options: {"include_citations": true}` when the user needs the source snippet behind each value.
+- Set `options: {"confidence_threshold": 0.8}` (or the user's threshold) to have weak fields flagged, and `options: {"include_citations": true}` when the user needs the source snippet behind each value.
 - If a field is missing from the content, leave it empty and say so. Don't fill it from your own knowledge.
 
 ## 5. Normalize to a framework (optional)
