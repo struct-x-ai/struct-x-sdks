@@ -12,7 +12,7 @@ Use the `structx_*` tools to turn content into JSON that matches a schema. Every
 Reuse before you write.
 
 1. If the content is a common format (a webhook payload, a log line, a product page, an article, an invoice), call `structx_recommend_templates` with a short sample of the content. If a result fits, use its slug as `template_slug`.
-2. If the user names a vendor or format, search the catalog with `structx_list_templates` (`q` takes tag words such as `stripe payments`; results come one page at a time, so follow `next_offset` for more) and read a match with `structx_get_template`.
+2. If the user names a vendor or format, search the catalog with `structx_list_templates`. Filter with `q` (tag words such as `stripe payments`) or `category` (a code such as `PAYMENTS` from `structx_list_categories`). Results come 25 per page by default, at most 50; pass `next_offset` as `offset` for the next page. Listed templates carry no schema, so read a match with `structx_get_template`.
 3. Only when nothing fits, call `structx_infer_schema` on one representative sample (at least 200 characters). It costs more than an extraction, so run it once, not per item. Show the user the drafted fields before extracting at scale, and refine with `structx_augment_schema` when they want changes: pass the `event_id` from the infer call and the same sample as `content` (the API rejects different content).
 
 When you write or edit a schema yourself:
