@@ -26,8 +26,8 @@ When you write or edit a schema yourself:
 | Source | Tool |
 | --- | --- |
 | Text, HTML, markdown or JSON already in the conversation | `structx_extract` with `content` |
-| A public web page | `structx_extract_from_url` (HTTPS only; it follows no redirects, so pass the final URL) |
-| A PDF on disk | `structx_extract_document` with `file_path`; set `max_credits` for large files. A 404 means document extraction isn't enabled for that key |
+| A public web page | `structx_extract_from_url` (HTTPS only; the Struct-X servers fetch it and follow no redirects, so pass the final URL). If the tool isn't listed, URL fetching isn't enabled |
+| A PDF | `structx_extract_document` with the PDF's bytes as `document_base64` (up to about 3 MB); set `max_credits` for large files. If the tool isn't listed, document extraction isn't enabled for this account |
 | Many items with the same shape | `structx_extract_batch` (up to 100 items per call, 500 KB each) instead of looping `structx_extract` |
 
 With a template, `tier` controls how many fields come back: start with `required` and raise it to `recommended`, `optional` or `extended` only when the user needs more fields.
@@ -52,4 +52,4 @@ To map an extracted record onto a standard framework, call `structx_canonical_fr
 ## 6. Account changes need the user's go-ahead
 
 - Save a schema with `structx_save_my_schema` only when the user asks to keep it. These tools change only the user's personal schemas; sharing a schema with an organization or offering it to the public community catalog is done in the Struct-X dashboard.
-- Before calling `structx_delete_my_schema`, `structx_delete_dataset` or `structx_request_withdrawal`, confirm with the user. These remove data from their account.
+- Before calling `structx_update_my_schema`, `structx_delete_my_schema` or `structx_delete_dataset`, confirm with the user. These change or remove data on their account.
