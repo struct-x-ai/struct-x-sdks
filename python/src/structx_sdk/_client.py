@@ -43,6 +43,7 @@ from ._models import (
     InferenceResult,
     Model,
     Template,
+    TemplatePage,
     Usage,
 )
 from ._version import __version__
@@ -99,6 +100,32 @@ def _extract_options(options: dict[str, Any] | None) -> dict[str, Any] | None:
         )
     wire["cache"] = use_cache
     return wire
+
+
+def _browse_params(
+    *,
+    q: str | None,
+    category: str | None,
+    vendor: str | None,
+    tag: str | None,
+    first_party: bool | None,
+    limit: int,
+    offset: int,
+) -> dict[str, Any]:
+    """Query parameters for `GET /v1/templates`. Filters are sent only
+    when set; `limit` and `offset` always are."""
+    params: dict[str, Any] = {"limit": limit, "offset": offset}
+    if q:
+        params["q"] = q
+    if category:
+        params["category"] = category
+    if vendor:
+        params["vendor"] = vendor
+    if tag:
+        params["tag"] = tag
+    if first_party is not None:
+        params["first_party"] = "true" if first_party else "false"
+    return params
 
 
 # ── Retry policy ────────────────────────────────────────────
@@ -573,10 +600,51 @@ class StructX(_BaseClient):
         )
 
     def list_templates(self) -> list[Template]:
-        """Public template gallery."""
+        """The whole public template gallery (`GET /v1/schemas`), with
+        every template's JSON Schema, in one response of several MB.
+        Prefer `browse_templates()`, which returns one page at a time."""
         raw = self._request("GET", "/v1/schemas")
         items = raw if isinstance(raw, list) else raw.get("templates", [])
         return [Template.model_validate(t) for t in items]
+
+    def browse_templates(
+        self,
+        *,
+        q: str | None = None,
+        category: str | None = None,
+        vendor: str | None = None,
+        tag: str | None = None,
+        first_party: bool | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> TemplatePage:
+        """One page of the template catalog (`GET /v1/templates`). The
+        preferred way to list templates.
+
+        Items carry no JSON Schema; `get_template(slug)` returns one
+        template's full schema. Filters AND together:
+
+        - `q`: space-separated tag tokens; a template matches only if its
+          tags contain every token (e.g. `"stripe payments"`). Lowercase
+          letters, digits, spaces, `.`, `_` and `-`, up to 100 characters.
+        - `category`: an upper-snake-case category code such as
+          `"PAYMENTS"` (see `list_categories()`).
+        - `vendor`: a vendor slug such as `"stripe"`.
+        - `tag`: one curated `prefix:value` facet, e.g. `"input:document"`.
+        - `first_party`: True for first-party templates only, False for
+          community templates only.
+
+        `limit` is 1-500 (default 25) and `offset` skips that many rows.
+        Pass the returned page's `next_offset` as `offset` for the next
+        page. A filter value outside these formats raises
+        `ValidationError` (422)."""
+        params = _browse_params(
+            q=q, category=category, vendor=vendor, tag=tag,
+            first_party=first_party, limit=limit, offset=offset,
+        )
+        return TemplatePage.model_validate(
+            self._request("GET", "/v1/templates", params=params)
+        )
 
     def list_models(self) -> list[Model]:
         """Available models. Most callers don't need this — the
@@ -620,16 +688,20 @@ class StructX(_BaseClient):
         slug: str | None = None,
         description: str | None = None,
         category: str | None = None,
-        publishable_consent: bool = False,
+        publishable_consent: bool | None = None,
     ) -> dict[str, Any]:
         """Persist a new JSON Schema to the caller's account as a personal
         schema. Binding a schema to an organization or sharing it is done in
-        the dashboard."""
-        body: dict[str, Any] = {
-            "name": name,
-            "json_schema": json_schema,
-            "publishable_consent": publishable_consent,
-        }
+        the dashboard.
+
+        `publishable_consent` is sent only when you pass it. Opting a schema
+        into community-catalog promotion is done in the dashboard: with an
+        API key, `publishable_consent=True` raises `PermissionDeniedError`
+        (403, code `publishable_consent_portal_only`). Personal schemas have
+        no category, so the API ignores `category`."""
+        body: dict[str, Any] = {"name": name, "json_schema": json_schema}
+        if publishable_consent is not None:
+            body["publishable_consent"] = publishable_consent
         if slug is not None:
             body["slug"] = slug
         if description is not None:
@@ -645,7 +717,13 @@ class StructX(_BaseClient):
         With an API key only personal schemas can be changed: sending
         `org_slug` or `visibility="org_shared"` raises `PermissionDeniedError`
         (403, code `api_key_personal_schemas_only`). Binding a schema to an
-        organization or sharing it is done in the dashboard."""
+        organization or sharing it is done in the dashboard.
+
+        Opting in to or out of community-catalog promotion is also done in
+        the dashboard: with an API key, a `publishable_consent` that changes
+        the current value raises `PermissionDeniedError` (403, code
+        `publishable_consent_portal_only`). `publishable_consent` is sent
+        only when you pass it."""
         body = {k: v for k, v in fields.items() if v is not None}
         return self._request("PATCH", f"/v1/schemas/mine/{slug}", json=body)
 
@@ -1109,9 +1187,34 @@ class AsyncStructX(_BaseClient):
         )
 
     async def list_templates(self) -> list[Template]:
+        """The whole public template gallery (`GET /v1/schemas`), with
+        every template's JSON Schema, in one response of several MB.
+        Prefer `browse_templates()`, which returns one page at a time."""
         raw = await self._request("GET", "/v1/schemas")
         items = raw if isinstance(raw, list) else raw.get("templates", [])
         return [Template.model_validate(t) for t in items]
+
+    async def browse_templates(
+        self,
+        *,
+        q: str | None = None,
+        category: str | None = None,
+        vendor: str | None = None,
+        tag: str | None = None,
+        first_party: bool | None = None,
+        limit: int = 25,
+        offset: int = 0,
+    ) -> TemplatePage:
+        """One page of the template catalog (`GET /v1/templates`). The
+        preferred way to list templates. Same arguments and result as
+        `StructX.browse_templates()`."""
+        params = _browse_params(
+            q=q, category=category, vendor=vendor, tag=tag,
+            first_party=first_party, limit=limit, offset=offset,
+        )
+        return TemplatePage.model_validate(
+            await self._request("GET", "/v1/templates", params=params)
+        )
 
     async def list_models(self) -> list[Model]:
         raw = await self._request("GET", "/v1/models")
@@ -1153,17 +1256,21 @@ class AsyncStructX(_BaseClient):
         slug: str | None = None,
         description: str | None = None,
         category: str | None = None,
-        publishable_consent: bool = False,
+        publishable_consent: bool | None = None,
     ) -> dict[str, Any]:
         """Persist a new JSON Schema to the caller's account as a personal
         schema. Returns the saved row including its server-generated slug if
         `slug` was None. Binding a schema to an organization or sharing it is
-        done in the dashboard."""
-        body: dict[str, Any] = {
-            "name": name,
-            "json_schema": json_schema,
-            "publishable_consent": publishable_consent,
-        }
+        done in the dashboard.
+
+        `publishable_consent` is sent only when you pass it. Opting a schema
+        into community-catalog promotion is done in the dashboard: with an
+        API key, `publishable_consent=True` raises `PermissionDeniedError`
+        (403, code `publishable_consent_portal_only`). Personal schemas have
+        no category, so the API ignores `category`."""
+        body: dict[str, Any] = {"name": name, "json_schema": json_schema}
+        if publishable_consent is not None:
+            body["publishable_consent"] = publishable_consent
         if slug is not None:
             body["slug"] = slug
         if description is not None:
@@ -1184,7 +1291,13 @@ class AsyncStructX(_BaseClient):
         With an API key only personal schemas can be changed: sending
         `org_slug` or `visibility="org_shared"` raises `PermissionDeniedError`
         (403, code `api_key_personal_schemas_only`). Binding a schema to an
-        organization or sharing it is done in the dashboard."""
+        organization or sharing it is done in the dashboard.
+
+        Opting in to or out of community-catalog promotion is also done in
+        the dashboard: with an API key, a `publishable_consent` that changes
+        the current value raises `PermissionDeniedError` (403, code
+        `publishable_consent_portal_only`). `publishable_consent` is sent
+        only when you pass it."""
         body = {k: v for k, v in fields.items() if v is not None}
         return await self._request("PATCH", f"/v1/schemas/mine/{slug}", json=body)
 

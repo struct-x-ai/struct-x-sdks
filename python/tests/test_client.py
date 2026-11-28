@@ -227,7 +227,7 @@ def test_usage(bearer_client, base_url):
     # path — a request to `/v1/billing/usage` would not match and 404.
     route = respx.get(f"{base_url}/billing/usage").mock(
         return_value=httpx.Response(
-            200, json={"credits_used_today": 42, "credits_limit_daily": 2000, "tier": "pro"}
+            200, json={"credits_used_today": 42, "credits_limit_today": 2000, "tier": "pro"}
         )
     )
     u = bearer_client.usage()
@@ -330,7 +330,7 @@ async def test_async_usage_bearer_path(abearer_client, base_url):
     # Bug 2 on the async client: `/billing/usage`; the bearer token is sent when set.
     route = respx.get(f"{base_url}/billing/usage").mock(
         return_value=httpx.Response(
-            200, json={"credits_used_today": 3, "credits_limit_daily": 334}
+            200, json={"credits_used_today": 3, "credits_limit_today": 334}
         )
     )
     u = await abearer_client.usage()

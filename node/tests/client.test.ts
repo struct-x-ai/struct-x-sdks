@@ -158,7 +158,7 @@ describe('usage path + auth (v0.4.1 fix)', () => {
   it('GETs /billing/usage (no /v1) and sends Authorization: Bearer when set', async () => {
     // Bug 2: billing router mounts at /billing (no /v1 prefix).
     const mockFetch = vi.fn().mockResolvedValue(
-      jsonResponse({ credits_used_today: 7, credits_limit_daily: 334, tier: 'developer' }),
+      jsonResponse({ credits_used_today: 7, credits_limit_today: 334, tier: 'developer' }),
     );
     const client = new StructX({ apiKey: 'sx_t', bearerToken: 'jwt_t', fetch: mockFetch });
     const u = await client.usage();
@@ -171,7 +171,7 @@ describe('usage path + auth (v0.4.1 fix)', () => {
 
   it('usage() works with an API key alone', async () => {
     const mockFetch = vi.fn().mockResolvedValue(
-      jsonResponse({ credits_used_today: 1, credits_limit_daily: 17 }),
+      jsonResponse({ credits_used_today: 1, credits_limit_today: 17 }),
     );
     const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     const u = await client.usage();
@@ -272,7 +272,7 @@ describe('Retry behavior', () => {
     const mockFetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 503))
       .mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 503))
-      .mockResolvedValueOnce(jsonResponse({ credits_used_today: 5, credits_limit_daily: 100 }, 200));
+      .mockResolvedValueOnce(jsonResponse({ credits_used_today: 5, credits_limit_today: 100 }, 200));
     const client = new StructX({
       apiKey: 'sx_test', fetch: mockFetch,
       retry: { maxAttempts: 3, initialBackoff: 0.001, jitter: 0 },
@@ -296,7 +296,7 @@ describe('Retry behavior', () => {
   it('respects Retry-After on a transient 503', async () => {
     const mockFetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ error: 'busy' }, 503, { 'Retry-After': '0' }))
-      .mockResolvedValueOnce(jsonResponse({ credits_used_today: 1, credits_limit_daily: 100 }, 200));
+      .mockResolvedValueOnce(jsonResponse({ credits_used_today: 1, credits_limit_today: 100 }, 200));
     const client = new StructX({
       apiKey: 'sx_test', fetch: mockFetch,
       retry: { maxAttempts: 2 },
@@ -425,7 +425,7 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
     expect(init!.method).toBe('GET');
   });
 
-  it('saveMySchema POSTs with camelCase → snake_case mapping; defaults publishable_consent=false', async () => {
+  it('saveMySchema POSTs with camelCase → snake_case mapping; omits publishable_consent unless set', async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ slug: 'srv-generated' }));
     const client = new StructX({ apiKey: 'sx_t', fetch: mockFetch });
     await client.saveMySchema({
@@ -439,7 +439,6 @@ describe('Personal schemas — CRUD (v0.2.0)', () => {
     expect(body).toEqual({
       name: 'My Schema',
       json_schema: { type: 'object' },
-      publishable_consent: false,
     });
   });
 

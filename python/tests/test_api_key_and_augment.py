@@ -31,7 +31,7 @@ _INFER_RESPONSE = {
 # (method, args, kwargs, HTTP method, path, status, response body)
 _API_KEY_CALLS = [
     ("usage", (), {}, "GET", "/billing/usage", 200,
-     {"credits_used_today": 3, "credits_limit_daily": 334}),
+     {"credits_used_today": 3, "credits_limit_today": 334}),
     ("list_my_schemas", (), {}, "GET", "/v1/schemas/mine", 200, [{"slug": "a"}]),
     ("get_my_schema", ("a",), {}, "GET", "/v1/schemas/mine/a", 200, {"slug": "a"}),
     ("save_my_schema", (), {"name": "A", "json_schema": {"type": "object"}},

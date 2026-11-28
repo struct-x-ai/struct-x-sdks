@@ -45,6 +45,7 @@ import type {
   InferenceResult,
   Model,
   Template,
+  TemplatePage,
   Usage,
 } from './models.js';
 import { VERSION } from './version.js';
@@ -200,6 +201,30 @@ export interface InferSchemaOptions {
   returnRecommendations?: boolean;
 }
 
+/** Options accepted by `browseTemplates()`. Filters AND together and are
+ *  sent only when set. */
+export interface BrowseTemplatesOptions {
+  /** Space-separated tag tokens; a template matches only if its tags
+   *  contain every token (e.g. `"stripe payments"`). Lowercase letters,
+   *  digits, spaces, `.`, `_` and `-`, up to 100 characters. */
+  q?: string;
+  /** Upper-snake-case category code such as `"PAYMENTS"` (see
+   *  `listCategories()`). */
+  category?: string;
+  /** Vendor slug such as `"stripe"`. */
+  vendor?: string;
+  /** One curated `prefix:value` facet, e.g. `"input:document"`. */
+  tag?: string;
+  /** `true` for first-party templates only, `false` for community
+   *  templates only. */
+  firstParty?: boolean;
+  /** Templates per page, 1-500. Default 25. */
+  limit?: number;
+  /** Matching templates to skip. Default 0. Pass the previous page's
+   *  `next_offset`. */
+  offset?: number;
+}
+
 /** Options accepted by `augmentSchema()`. */
 export interface AugmentSchemaOptions {
   /** `"html"`, `"markdown"`, `"text"` or `"json"`. Detected from the
@@ -219,10 +244,12 @@ export interface SaveMySchemaOptions {
   slug?: string;
   /** Long-form description shown on the catalog card. */
   description?: string;
-  /** Category slug (e.g. `"logs"`, `"ecommerce"`). */
+  /** Ignored by the API: personal schemas have no category. */
   category?: string;
   /** Opt in to having an admin consider this schema for the public
-   *  catalog. Default false — schema stays private to the calling user. */
+   *  catalog. Sent only when set. Opting in is done in the dashboard: with
+   *  an API key, `true` rejects with `PermissionDeniedError` (403, code
+   *  `publishable_consent_portal_only`). */
   publishableConsent?: boolean;
 }
 
@@ -248,8 +275,12 @@ export interface RequestWithdrawalOptions {
 export interface UpdateMySchemaFields {
   name?: string;
   description?: string;
+  /** Ignored by the API: personal schemas have no category. */
   category?: string;
   jsonSchema?: Record<string, unknown>;
+  /** Sent only when set. Opting in or out is done in the dashboard: with an
+   *  API key, a value that changes the current one rejects with
+   *  `PermissionDeniedError` (403, code `publishable_consent_portal_only`). */
   publishableConsent?: boolean;
 }
 
@@ -438,13 +469,57 @@ export class StructX {
     })) as InferenceResult;
   }
 
-  /** Public template gallery. */
+  /**
+   * The whole public template gallery (`GET /v1/schemas`), with every
+   * template's JSON Schema, in one response of several MB. Prefer
+   * `browseTemplates()`, which returns one page at a time.
+   */
   async listTemplates(): Promise<Template[]> {
     const raw = await this._request({ method: 'GET', path: '/v1/schemas' });
     if (Array.isArray(raw)) return raw as Template[];
     const obj = raw as Record<string, unknown>;
     const items = obj['templates'];
     return Array.isArray(items) ? (items as Template[]) : [];
+  }
+
+  /**
+   * One page of the template catalog (`GET /v1/templates`). The preferred
+   * way to list templates.
+   *
+   * Items carry no JSON Schema; `getTemplate(slug)` returns one template's
+   * full schema. 25 templates per page by default (`limit` 1-500). The
+   * result's `next_offset` is the `offset` of the next page, or `null` on
+   * the last page. A filter value outside the documented formats rejects
+   * with `ValidationError` (422).
+   */
+  async browseTemplates(opts: BrowseTemplatesOptions = {}): Promise<TemplatePage> {
+    const query: Record<string, string | number | boolean | undefined> = {
+      limit: opts.limit ?? 25,
+      offset: opts.offset ?? 0,
+      q: opts.q || undefined,
+      category: opts.category || undefined,
+      vendor: opts.vendor || undefined,
+      tag: opts.tag || undefined,
+      first_party: opts.firstParty,
+    };
+    const raw = (await this._request({
+      method: 'GET',
+      path: '/v1/templates',
+      query,
+    })) as Record<string, unknown>;
+    const items = Array.isArray(raw['items']) ? (raw['items'] as TemplatePage['items']) : [];
+    const total = typeof raw['total'] === 'number' ? raw['total'] : 0;
+    const offset = typeof raw['offset'] === 'number' ? raw['offset'] : 0;
+    const limit = typeof raw['limit'] === 'number' ? raw['limit'] : 0;
+    const next = offset + items.length;
+    return {
+      ...raw,
+      items,
+      total,
+      limit,
+      offset,
+      next_offset: items.length > 0 && next < total ? next : null,
+    };
   }
 
   /**
@@ -465,10 +540,16 @@ export class StructX {
    * (`GET /billing/usage`, no `/v1` prefix).
    */
   async usage(): Promise<Usage> {
-    return (await this._request({
+    const raw = (await this._request({
       method: 'GET',
       path: '/billing/usage',
-    })) as Usage;
+    })) as Record<string, unknown>;
+    // `credits_limit_daily` was typed here before but is not a field the
+    // API sends; fill it from `credits_limit_today` for older callers.
+    return {
+      ...raw,
+      credits_limit_daily: raw['credits_limit_daily'] ?? raw['credits_limit_today'] ?? 0,
+    } as Usage;
   }
 
   // ── Catalog browsing (v0.2.0) ────────────────────────────────
@@ -521,13 +602,20 @@ export class StructX {
    * schema. Returns the saved row including its server-generated slug if
    * `slug` was omitted. Binding a schema to an organization or sharing it
    * is done in the dashboard.
+   *
+   * `publishable_consent` is sent only when `publishableConsent` is set.
+   * Opting a schema into community-catalog promotion is done in the
+   * dashboard: with an API key, `publishableConsent: true` rejects with
+   * `PermissionDeniedError` (403, code `publishable_consent_portal_only`).
    */
   async saveMySchema(opts: SaveMySchemaOptions): Promise<Record<string, unknown>> {
     const body: Record<string, unknown> = {
       name: opts.name,
       json_schema: opts.jsonSchema,
-      publishable_consent: opts.publishableConsent ?? false,
     };
+    if (opts.publishableConsent !== undefined) {
+      body['publishable_consent'] = opts.publishableConsent;
+    }
     if (opts.slug !== undefined) body['slug'] = opts.slug;
     if (opts.description !== undefined) body['description'] = opts.description;
     if (opts.category !== undefined) body['category'] = opts.category;

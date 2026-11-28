@@ -85,7 +85,7 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 
 | Tool | What it does |
 |---|---|
-| **`structx_list_templates`** | Browse every public template — saves the agent from hand-writing a schema for common formats (Stripe events, GitHub issues, product pages, news articles). |
+| **`structx_list_templates`** | Page through the public catalog (25 per page, at most 50), filtered by tag words (`q`) and `category`, so the agent can reuse a template for a common format (Stripe events, GitHub issues, product pages, news articles) instead of writing a schema. Items carry no schema; `structx_get_template` returns one. |
 | **`structx_get_template`** | Fetch one template's full JSON Schema + metadata by slug. |
 | **`structx_template_cost_estimate`** | Estimate field count, tokens, and credits for a template at a given tier — no model call. Returns a per-tier breakdown. |
 | **`structx_template_versions`** | List the version history of a template family by its bare slug. |
@@ -102,13 +102,13 @@ Same pattern — `command: "structx-mcp"`, `env: { STRUCTX_API_KEY: ... }`. The 
 
 ### Personal schemas
 
-These use the server's API key, so they create, change and delete personal schemas only. Binding a schema to an organization or sharing it is done in the struct-x dashboard.
+These use the server's API key, so they create, change and delete personal schemas only. Binding a schema to an organization or sharing it is done in the struct-x dashboard, and so is offering a schema to the public community catalog (`publishable_consent`).
 
 | Tool | What it does |
 |---|---|
 | **`structx_list_my_schemas`** | List schemas saved to the caller's account. |
 | **`structx_get_my_schema`** | Fetch one saved schema by slug. |
-| **`structx_save_my_schema`** | Persist a JSON Schema to the account (opt into community promotion via `publishable_consent`). |
+| **`structx_save_my_schema`** | Persist a JSON Schema to the account as a personal schema. |
 | **`structx_update_my_schema`** | Patch a saved schema (pass only changed fields). |
 | **`structx_delete_my_schema`** | Permanently delete a saved schema. |
 

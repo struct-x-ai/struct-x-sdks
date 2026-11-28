@@ -101,8 +101,10 @@ type InferenceResult struct {
 
 // ── Templates ────────────────────────────────────────────────
 
-// Template is a row from the public template gallery (GET /v1/schemas). The
-// JSON Schema is carried in SchemaDef (wire field "schema").
+// Template is a row from the public template gallery (GET /v1/schemas),
+// returned by ListTemplates, which downloads the whole catalog at once. For one
+// page of the catalog use BrowseTemplates (TemplatePage). The JSON Schema is
+// carried in SchemaDef (wire field "schema").
 type Template struct {
 	SchemaDef      json.RawMessage `json:"schema"`
 	Slug           string          `json:"slug"`
@@ -113,6 +115,55 @@ type Template struct {
 	UsageCount     *int            `json:"usage_count,omitempty"`
 	AcceptanceRate *float64        `json:"acceptance_rate,omitempty"`
 	AvgConfidence  *float64        `json:"avg_confidence,omitempty"`
+}
+
+// FieldCounts is the number of fields a template has per tier.
+type FieldCounts struct {
+	Required    int `json:"required"`
+	Recommended int `json:"recommended"`
+	Optional    int `json:"optional"`
+	Extended    int `json:"extended"`
+	Total       int `json:"total"`
+}
+
+// TemplateSummary is one catalog row from GET /v1/templates (BrowseTemplates).
+// It carries no JSON Schema; GetTemplate returns one template's full schema.
+type TemplateSummary struct {
+	ID                string      `json:"id"`
+	Slug              string      `json:"slug"`
+	Name              string      `json:"name"`
+	FamilySlug        string      `json:"family_slug"`
+	Version           string      `json:"version"`
+	Description       *string     `json:"description,omitempty"`
+	Category          string      `json:"category"`
+	Vendor            *string     `json:"vendor,omitempty"`
+	VendorDisplayName *string     `json:"vendor_display_name,omitempty"`
+	LogType           *string     `json:"log_type,omitempty"`
+	Tags              []string    `json:"tags"`
+	IsFirstParty      bool        `json:"is_first_party"`
+	DefaultTier       string      `json:"default_tier"`
+	FieldCounts       FieldCounts `json:"field_counts"`
+	UsageCount        int         `json:"usage_count"`
+	PublishedAt       *string     `json:"published_at,omitempty"`
+}
+
+// TemplatePage is one page of the template catalog (GET /v1/templates). Total
+// counts every template that matches the filters.
+type TemplatePage struct {
+	Items  []TemplateSummary `json:"items"`
+	Total  int               `json:"total"`
+	Limit  int               `json:"limit"`
+	Offset int               `json:"offset"`
+}
+
+// NextOffset returns the Offset of the next page and true, or 0 and false when
+// this is the last page.
+func (p *TemplatePage) NextOffset() (int, bool) {
+	next := p.Offset + len(p.Items)
+	if len(p.Items) == 0 || next >= p.Total {
+		return 0, false
+	}
+	return next, true
 }
 
 // ── Models / routing info ────────────────────────────────────
@@ -130,15 +181,28 @@ type Model struct {
 // ── Usage ────────────────────────────────────────────────────
 
 // Usage is the summary returned by /billing/usage (the billing router
-// mounts at /billing, no /v1 prefix). PeriodStart/PeriodEnd
-// are left as raw strings (they may be ISO-8601 timestamps or absent) to keep
-// decoding forward-compatible.
+// mounts at /billing, no /v1 prefix). Today's figures reset at midnight UTC;
+// the monthly ones at the start of the calendar month (UTC). PeriodStart and
+// PeriodEnd are left as raw strings (they may be ISO-8601 timestamps or
+// absent) to keep decoding forward-compatible.
 type Usage struct {
-	CreditsUsedToday  int     `json:"credits_used_today"`
+	CreditsUsedToday      int `json:"credits_used_today"`
+	CreditsLimitToday     int `json:"credits_limit_today"`
+	CreditsRemainingToday int `json:"credits_remaining_today"`
+	CreditsUsedThisMonth  int `json:"credits_used_this_month"`
+	CreditsLimitThisMonth int `json:"credits_limit_this_month"`
+	ExtractionsToday      int `json:"extractions_today"`
+	ExtractionsThisMonth  int `json:"extractions_this_month"`
+	// CreditsLimitDaily holds the same value as CreditsLimitToday.
+	//
+	// Deprecated: the API never sends a credits_limit_daily field; Usage
+	// fills this from credits_limit_today. Use CreditsLimitToday.
 	CreditsLimitDaily int     `json:"credits_limit_daily"`
 	Tier              *string `json:"tier,omitempty"`
-	PeriodStart       *string `json:"period_start,omitempty"`
-	PeriodEnd         *string `json:"period_end,omitempty"`
+	// Period is today's date, YYYY-MM-DD (UTC).
+	Period      *string `json:"period,omitempty"`
+	PeriodStart *string `json:"period_start,omitempty"`
+	PeriodEnd   *string `json:"period_end,omitempty"`
 }
 
 // ── Batch extraction ─────────────────────────────────────────

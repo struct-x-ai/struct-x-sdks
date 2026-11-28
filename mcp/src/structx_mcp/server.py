@@ -251,6 +251,47 @@ def _extract_options(options: Any) -> Any:
     return wire
 
 
+# structx_list_templates paging: the founder-set page size (default 25, at
+# most 50) and the API's filter formats, checked here so a bad value gets a
+# precise message instead of the API's 422.
+_TEMPLATE_PAGE_DEFAULT = 25
+_TEMPLATE_PAGE_MAX = 50
+_TEMPLATE_Q = re.compile(r"[a-z0-9 ._-]{1,100}")
+_TEMPLATE_CATEGORY = re.compile(r"[A-Z0-9_]{1,50}")
+
+# structx_update_my_schema: the fields its input schema lists.
+_UPDATABLE_SCHEMA_FIELDS = ("name", "description", "json_schema")
+
+
+def _template_page_args(arguments: dict[str, Any]) -> dict[str, Any]:
+    """`browse_templates()` arguments for structx_list_templates. `q` is
+    lowercased with runs of whitespace collapsed, `category` uppercased;
+    empty filters are dropped. `limit` is clamped to 1-50, `offset` to >= 0."""
+    q = " ".join(str(arguments.get("q") or "").lower().split())
+    category = str(arguments.get("category") or "").strip().upper()
+    if q and not _TEMPLATE_Q.fullmatch(q):
+        raise StructXError(
+            "q may contain only letters, digits, spaces, '.', '_' and '-' "
+            "(at most 100 characters)"
+        )
+    if category and not _TEMPLATE_CATEGORY.fullmatch(category):
+        raise StructXError(
+            "category must be a code such as PAYMENTS: letters, digits and '_' "
+            "(at most 50 characters)"
+        )
+    limit = arguments.get("limit")
+    limit = _TEMPLATE_PAGE_DEFAULT if limit is None else int(limit)
+    args: dict[str, Any] = {
+        "limit": min(max(limit, 1), _TEMPLATE_PAGE_MAX),
+        "offset": max(int(arguments.get("offset") or 0), 0),
+    }
+    if q:
+        args["q"] = q
+    if category:
+        args["category"] = category
+    return args
+
+
 async def _dispatch(
     name: str,
     arguments: dict[str, Any],
@@ -313,8 +354,14 @@ async def _dispatch(
         return result.model_dump()
 
     if name == "structx_list_templates":
-        templates = await sdk.list_templates()
-        return {"templates": [t.model_dump(by_alias=True) for t in templates]}
+        page = await sdk.browse_templates(**_template_page_args(arguments))
+        return {
+            "templates": [t.model_dump() for t in page.items],
+            "total": page.total,
+            "limit": page.limit,
+            "offset": page.offset,
+            "next_offset": page.next_offset,
+        }
 
     if name == "structx_usage":
         usage = await sdk.usage()
@@ -335,19 +382,23 @@ async def _dispatch(
         return await sdk.get_my_schema(arguments["slug"])
 
     if name == "structx_save_my_schema":
+        # publishable_consent is set in the dashboard only, so it is never
+        # sent; personal schemas have no category (the API drops it).
         return await sdk.save_my_schema(
             name=arguments["name"],
             json_schema=arguments["json_schema"],
             slug=arguments.get("slug"),
             description=arguments.get("description"),
-            category=arguments.get("category"),
-            publishable_consent=arguments.get("publishable_consent", False),
         )
 
     if name == "structx_update_my_schema":
-        slug = arguments["slug"]
-        updates = {k: v for k, v in arguments.items() if k != "slug"}
-        return await sdk.update_my_schema(slug, **updates)
+        # Only the fields the tool advertises reach the API, so an agent
+        # can't send publishable_consent, org_slug or visibility.
+        updates = {
+            k: arguments[k] for k in _UPDATABLE_SCHEMA_FIELDS
+            if arguments.get(k) is not None
+        }
+        return await sdk.update_my_schema(arguments["slug"], **updates)
 
     if name == "structx_delete_my_schema":
         await sdk.delete_my_schema(arguments["slug"])

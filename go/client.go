@@ -368,13 +368,79 @@ func (c *Client) InferSchema(ctx context.Context, req InferSchemaRequest) (*Infe
 	return &out, nil
 }
 
-// ListTemplates returns the public template gallery (GET /v1/schemas).
+// ListTemplates returns the whole public template gallery (GET /v1/schemas),
+// with every template's JSON Schema, in one response of several MB. Prefer
+// BrowseTemplates, which returns one page at a time.
 func (c *Client) ListTemplates(ctx context.Context) ([]Template, error) {
 	data, err := c.request(ctx, http.MethodGet, "/v1/schemas", nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 	return decodeList[Template](data, "templates")
+}
+
+// DefaultTemplatePageSize is the page size BrowseTemplates asks for when
+// BrowseTemplatesParams.Limit is 0.
+const DefaultTemplatePageSize = 25
+
+// BrowseTemplatesParams filters and pages BrowseTemplates. Filters AND together
+// and are sent only when set.
+type BrowseTemplatesParams struct {
+	// Q is space-separated tag tokens; a template matches only if its tags
+	// contain every token (e.g. "stripe payments"). Lowercase letters, digits,
+	// spaces, '.', '_' and '-', up to 100 characters.
+	Q string
+	// Category is an upper-snake-case category code such as "PAYMENTS" (see
+	// ListCategories).
+	Category string
+	// Vendor is a vendor slug such as "stripe".
+	Vendor string
+	// Tag is one curated prefix:value facet, e.g. "input:document".
+	Tag string
+	// FirstParty, when set, keeps first-party templates only (true) or
+	// community templates only (false).
+	FirstParty *bool
+	// Limit is the page size, 1-500. 0 means DefaultTemplatePageSize (25).
+	Limit int
+	// Offset is how many matching templates to skip. Pass the previous page's
+	// NextOffset.
+	Offset int
+}
+
+// BrowseTemplates returns one page of the template catalog (GET /v1/templates).
+// It is the preferred way to list templates.
+//
+// Items carry no JSON Schema; GetTemplate returns one template's full schema.
+// Use TemplatePage.NextOffset for the next page. A filter value outside the
+// documented formats returns an error matching ErrValidation (422).
+func (c *Client) BrowseTemplates(ctx context.Context, params BrowseTemplatesParams) (*TemplatePage, error) {
+	limit := params.Limit
+	if limit == 0 {
+		limit = DefaultTemplatePageSize
+	}
+	q := url.Values{}
+	q.Set("limit", strconv.Itoa(limit))
+	q.Set("offset", strconv.Itoa(params.Offset))
+	if params.Q != "" {
+		q.Set("q", params.Q)
+	}
+	if params.Category != "" {
+		q.Set("category", params.Category)
+	}
+	if params.Vendor != "" {
+		q.Set("vendor", params.Vendor)
+	}
+	if params.Tag != "" {
+		q.Set("tag", params.Tag)
+	}
+	if params.FirstParty != nil {
+		q.Set("first_party", strconv.FormatBool(*params.FirstParty))
+	}
+	var out TemplatePage
+	if err := c.doJSON(ctx, http.MethodGet, "/v1/templates", nil, q, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // ListModels returns the available models (GET /v1/models). Operator-only post
@@ -393,6 +459,9 @@ func (c *Client) Usage(ctx context.Context) (*Usage, error) {
 	var out Usage
 	if err := c.doJSON(ctx, http.MethodGet, "/billing/usage", nil, nil, &out); err != nil {
 		return nil, err
+	}
+	if out.CreditsLimitDaily == 0 {
+		out.CreditsLimitDaily = out.CreditsLimitToday
 	}
 	return &out, nil
 }
@@ -494,11 +563,16 @@ func (c *Client) GetMySchema(ctx context.Context, slug string) (map[string]any, 
 
 // SaveSchemaParams is the input to SaveMySchema. Name and JSONSchema are required.
 type SaveSchemaParams struct {
-	Name               string
-	JSONSchema         json.RawMessage
-	Slug               string
-	Description        string
-	Category           string
+	Name        string
+	JSONSchema  json.RawMessage
+	Slug        string
+	Description string
+	// Category is ignored by the API: personal schemas have no category.
+	Category string
+	// PublishableConsent opts the schema into community-catalog promotion. It
+	// is sent only when true (false is the API's default). Opting in is done in
+	// the dashboard: with an API key, true returns an error matching
+	// ErrPermissionDenied (403, code publishable_consent_portal_only).
 	PublishableConsent bool
 }
 
@@ -507,9 +581,11 @@ type SaveSchemaParams struct {
 // the dashboard.
 func (c *Client) SaveMySchema(ctx context.Context, params SaveSchemaParams) (map[string]any, error) {
 	body := map[string]any{
-		"name":                params.Name,
-		"json_schema":         params.JSONSchema,
-		"publishable_consent": params.PublishableConsent,
+		"name":        params.Name,
+		"json_schema": params.JSONSchema,
+	}
+	if params.PublishableConsent {
+		body["publishable_consent"] = true
 	}
 	if params.Slug != "" {
 		body["slug"] = params.Slug
@@ -526,10 +602,15 @@ func (c *Client) SaveMySchema(ctx context.Context, params SaveSchemaParams) (map
 // SchemaUpdate carries a partial update for UpdateMySchema. Only the non-nil /
 // non-empty fields are sent, so unspecified fields are left unchanged.
 type SchemaUpdate struct {
-	Name               *string
-	Description        *string
-	Category           *string
-	JSONSchema         json.RawMessage
+	Name        *string
+	Description *string
+	// Category is ignored by the API: personal schemas have no category.
+	Category   *string
+	JSONSchema json.RawMessage
+	// PublishableConsent is sent only when non-nil. Opting in or out is done
+	// in the dashboard: with an API key, a value that changes the current one
+	// returns an error matching ErrPermissionDenied (403, code
+	// publishable_consent_portal_only).
 	PublishableConsent *bool
 }
 
